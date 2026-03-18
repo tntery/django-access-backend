@@ -25,10 +25,25 @@ test_users = [
     {'account_user_id': 123456, 'full_name': 'Zanele Luthuli', 'balance': 5.43, 'device_access_id': 662019, 'connected': False},
 ] # Simulated user data for testing
 
+def get_test_users():
+    """Simulate fetching user data from the accounting system database (replace with actual DB query)"""
+    # for mapping in AccountMapping.objects.all(): get the corresponding user from test_users and update the device_access_id and connected status based on the mapping. connected = True if mapping exists and device_access_id is not None, otherwise False. This simulates the state of the users based on the current mappings in the database.
+    for mapping in AccountMapping.objects.all():
+        for user in test_users:
+            if str(user['account_user_id']) == mapping.account_user_id:
+                user['device_access_id'] = mapping.device_access_id
+                user['connected'] = True if mapping.device_access_id else False
+        
+    return test_users
+
 def get_palladium_balance(device_access_id):
     """Return a random balance for the given device_access_id (replace with actual DB query)"""
-    return random.randint(-10, 10)  # Simulate balance for testing
-
+    # from get_test_users(), find the user with the matching device_access_id and return their balance. This simulates fetching the balance from the accounting system based on the mapping.
+    for user in get_test_users():
+        if str(user['device_access_id']) == str(device_access_id):
+            print(f"Found user for device_access_id {device_access_id}: {user['full_name']} with balance {user['balance']}")  # Debug log
+            return user['balance']
+        
 @csrf_exempt
 def access_event(request):
     """Handle access event from access control device"""
@@ -70,10 +85,10 @@ def access_event(request):
     else:
         return JsonResponse({"error": "Invalid request method"}, status=405)
 
-def mapping_list(request):
-    """Return a list of all mappings for display in the admin interface"""
+def account_mapping_list(request):
+    """Return a list of all mappings of the access control user to the different external system accounts for display in the admin interface"""
 
-    return render(request, "access/mapping_list.html", {"users": test_users})
+    return render(request, "access/mapping_list.html", {"users": get_test_users()})
 
 @csrf_exempt
 def set_modal_state(request):

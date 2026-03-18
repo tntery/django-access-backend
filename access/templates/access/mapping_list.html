@@ -10,13 +10,13 @@
 <body>
 
     <div class="container mt-4">
-        <h2>Connections</h2>
-        <p>Manage your access connections here.</p>
+        <h2>User Connections</h2>
+        <p>Manage your connection pairing between the access control system user and the corresponding accounting system user here.</p>
         <table class="table table-striped mt-5">
             <thead>
             <tr>
                 <th>Full Name</th>
-                <th>Balance</th>
+                <th class="text-end pe-5 ps-0">Balance ($)</th>
                 <th>Status</th>
                 <th>Action</th>
             </tr>
@@ -25,21 +25,21 @@
             {% for u in users %}
             <tr data-palladium-id="{{ u.account_user_id }}" data-full-name="{{ u.full_name }}">
                 <td>{{ u.full_name }}</td>
-                <td>{{ u.balance }}</td>
+                <td class="text-end pe-5 ps-0">{{ u.balance }}</td>
                 <td>
                 {% if u.connected %}
                     <span class="badge bg-success">Connected</span>
                 {% else %}
-                    <span class="badge bg-secondary">Not Connected</span>
+                    <span class="badge bg-danger">Not Connected</span>
                 {% endif %}
                 <!-- Pending badge if modal open and TempMapping exists -->
                 <span id="pendingBadge-{{ u.account_user_id }}" class="badge bg-warning d-none">Pending Mapping</span>
                 </td>
                 <td>
                 {% if u.connected %}
-                    <button class="btn btn-outline-primary btn-sm" onclick="openMappingModal(this)">Reconnect</button>
+                    <button class="btn btn-sm btn-outline-success btn-sm" onclick="openMappingModal(this)">Reconnect</button>
                 {% else %}
-                    <button class="btn btn-primary btn-sm" onclick="openMappingModal(this)">Connect</button>
+                    <button class="btn btn-primary" onclick="openMappingModal(this)">Connect</button>
                 {% endif %}
                 </td>
             </tr>
@@ -57,7 +57,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="closeMappingModal()"></button>
             </div>
             <div class="modal-body">
-                <p><strong>Pending MA300 ID:</strong> <span id="pendingMa300" class="text-danger fw-bold"></span></p>
+                <p><strong>Pending MA300 ID:</strong> <span id="pendingMa300" class="text-primary fw-bold"></span></p>
                 <p><strong>Palladium User:</strong> <span id="pendingPalladium" class="text-info"></span></p>
                 <p><strong>Full Name:</strong> <span id="pendingfullName" class="text-info"></span></p>
             </div>
