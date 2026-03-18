@@ -2,12 +2,18 @@ from django.db import models
 
 class Mapping(models.Model):
     """Model to store the mapping between access control device IDs and accounting system IDs"""
+
+    MAPPING_SYSTEM_CHOICES = (
+        ("palladium", "Palladium"),
+        ("quickbooks", "QuickBooks"),
+        ("xero", "Xero"),
+    )
     access_id = models.CharField(max_length=50, unique=True, null=True, blank=True,help_text="Unique identifier from access control device")
     mapping_id = models.CharField(max_length=50, unique=True, help_text="Unique identifier from accounting system")
-    mapping_system = models.CharField(max_length=50, help_text="Accounting system name")
+    mapping_system = models.CharField(max_length=50, default="palladium", help_text="Accounting system name")
 
     def __str__(self):
-        return f"Mapping (access_id={self.access_id}, mapping_id={self.mapping_id}, system={self.mapping_system})"
+        return f"(access_id={self.access_id} | mapping_id={self.mapping_id} | system={self.mapping_system})"
 
 class TempMapping(models.Model):
     """Model to temporarily store access attempts before mapping is confirmed"""
@@ -33,4 +39,7 @@ class ModalStatus(models.Model):
         ("closed", "Closed"),
     )
     status = models.CharField(max_length=10, choices=STATUSES, default="closed")
+
+    def __str__(self):
+        return f"ModalStatus ({str(self.status).title()})"
 

@@ -12,7 +12,7 @@
     <div class="container mt-4">
         <h2>Connections</h2>
         <p>Manage your access connections here.</p>
-        <table class="table table-striped">
+        <table class="table table-striped mt-5">
             <thead>
             <tr>
                 <th>Full Name</th>
@@ -57,7 +57,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="closeMappingModal()"></button>
             </div>
             <div class="modal-body">
-                <p><strong>Pending MA300 ID:</strong> <span id="pendingMa300" class="text-primary"></span></p>
+                <p><strong>Pending MA300 ID:</strong> <span id="pendingMa300" class="text-danger fw-bold"></span></p>
                 <p><strong>Palladium User:</strong> <span id="pendingPalladium" class="text-info"></span></p>
                 <p><strong>Full Name:</strong> <span id="pendingfullName" class="text-info"></span></p>
             </div>
@@ -68,7 +68,84 @@
         </div>
     </div>
 
-    
+    <!-- scripts -->
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+
+    <script>
+        let selectedPalladiumId = null;
+        let selectedfullName = null;
+        let pollMappingIntervalId = null;
+
+        // closed by default on page load
+        updateDBModalStatus("closed");
+
+        function openMappingModal(button) {
+
+            const row = button.closest("tr");
+            selectedPalladiumId = row.dataset.palladiumId;
+            selectedfullName = row.dataset.fullName;
+
+            console.log(selectedPalladiumId, selectedfullName);
+
+            document.getElementById("pendingPalladium").innerText = selectedPalladiumId;
+            document.getElementById("pendingfullName").innerText = selectedfullName;
+
+            // Show pending badge
+            document.getElementById("pendingBadge-" + selectedPalladiumId).classList.remove("d-none");
+
+            updateDBModalStatus("open");
+
+            // Start polling for TempMapping updates
+            pollTempMapping();
+
+            new bootstrap.Modal(document.getElementById('mappingModal')).show();
+        }
+
+        function updateDBModalStatus(status) {
+            fetch("/set-modal-status", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: "{\"status\": \"" + status + "\"}"
+            });
+        }
+
+        function closeMappingModal() {
+
+            updateDBModalStatus("closed");
+            
+            // Hide pending badge
+            if(selectedPalladiumId) {
+                document.getElementById("pendingBadge-" + selectedPalladiumId).classList.add("d-none");
+            }
+            // Stop polling
+            clearTimeout(pollMappingIntervalId);
+        }
+
+        function pollTempMapping() {
+            pollMappingIntervalId = setInterval(() => {
+                fetch("/poll-temp-mapping")
+                .then(res => res.json())
+                .then(data => {
+                document.getElementById("pendingMa300").innerText = data.access_id || "Waiting for biometric/card input...";
+                });   
+            }, 2000);
+        }
+
+        function confirmMapping() {
+            const access_id = document.getElementById("pendingMa300").innerText;
+            fetch("/confirm-mapping", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: "{\"access_id\": \"" + access_id + "\", \"mapping_id\": \"" + selectedPalladiumId + "\"}"
+            }).then(res => res.json()).then(data => {
+                alert("Connection saved!");
+                closeMappingModal();
+                location.reload();
+            });
+        }
+
+    </script>
 
 </body>
 </html>
