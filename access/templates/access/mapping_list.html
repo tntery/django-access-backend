@@ -23,7 +23,7 @@
             </thead>
             <tbody>
             {% for u in users %}
-            <tr data-palladium-id="{{ u.mapping_id }}" data-full-name="{{ u.full_name }}">
+            <tr data-palladium-id="{{ u.account_user_id }}" data-full-name="{{ u.full_name }}">
                 <td>{{ u.full_name }}</td>
                 <td>{{ u.balance }}</td>
                 <td>
@@ -33,7 +33,7 @@
                     <span class="badge bg-secondary">Not Connected</span>
                 {% endif %}
                 <!-- Pending badge if modal open and TempMapping exists -->
-                <span id="pendingBadge-{{ u.mapping_id }}" class="badge bg-warning d-none">Pending Mapping</span>
+                <span id="pendingBadge-{{ u.account_user_id }}" class="badge bg-warning d-none">Pending Mapping</span>
                 </td>
                 <td>
                 {% if u.connected %}
@@ -78,7 +78,15 @@
         let pollMappingIntervalId = null;
 
         // closed by default on page load
-        updateDBModalStatus("closed");
+        updateDBModalState("closed");
+
+        function updateDBModalState(state) {
+            fetch("/set-modal-state", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: "{\"state\": \"" + state + "\"}"
+            });
+        }
 
         function openMappingModal(button) {
 
@@ -94,7 +102,7 @@
             // Show pending badge
             document.getElementById("pendingBadge-" + selectedPalladiumId).classList.remove("d-none");
 
-            updateDBModalStatus("open");
+            updateDBModalState("open");
 
             // Start polling for TempMapping updates
             pollTempMapping();
@@ -102,17 +110,9 @@
             new bootstrap.Modal(document.getElementById('mappingModal')).show();
         }
 
-        function updateDBModalStatus(status) {
-            fetch("/set-modal-status", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: "{\"status\": \"" + status + "\"}"
-            });
-        }
-
         function closeMappingModal() {
 
-            updateDBModalStatus("closed");
+            updateDBModalState("closed");
             
             // Hide pending badge
             if(selectedPalladiumId) {
@@ -127,17 +127,17 @@
                 fetch("/poll-temp-mapping")
                 .then(res => res.json())
                 .then(data => {
-                document.getElementById("pendingMa300").innerText = data.access_id || "Waiting for biometric/card input...";
+                document.getElementById("pendingMa300").innerText = data.device_access_id || "Waiting for biometric/card input...";
                 });   
             }, 2000);
         }
 
         function confirmMapping() {
-            const access_id = document.getElementById("pendingMa300").innerText;
+            const device_access_id = document.getElementById("pendingMa300").innerText;
             fetch("/confirm-mapping", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: "{\"access_id\": \"" + access_id + "\", \"mapping_id\": \"" + selectedPalladiumId + "\"}"
+                body: "{\"device_access_id\": \"" + device_access_id + "\", \"account_user_id\": \"" + selectedPalladiumId + "\"}"
             }).then(res => res.json()).then(data => {
                 alert("Connection saved!");
                 closeMappingModal();

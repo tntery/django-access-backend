@@ -1,9 +1,9 @@
 from django.contrib import admin
 
 # Register your models here.
-from .models import Mapping, TempMapping, AccessLog, ModalStatus
+from .models import AccountMapping, PendingAccountMapping, AccessEventLog, MappingModalState
 
-admin.site.register(Mapping)
-admin.site.register(TempMapping)
-admin.site.register(AccessLog)
-admin.site.register(ModalStatus)
+admin.site.register(AccountMapping)
+admin.site.register(PendingAccountMapping)
+admin.site.register(AccessEventLog)
+admin.site.register(MappingModalState)
