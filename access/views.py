@@ -68,17 +68,28 @@ def access_event(request):
                 PendingAccountMapping.objects.update_or_create(id=1, defaults={"device_access_id": device_access_id})
                 return JsonResponse({"access": "REJECT"})  # always reject while mapping modal is open
 
-            # Normal flow: check mapping
-            mapping = AccountMapping.objects.filter(device_access_id=device_access_id).first()
-            if mapping:
-                balance = get_palladium_balance(mapping.device_access_id)
-                print(f"Access ID: {device_access_id}, Palladium ID: {mapping.device_access_id}, Balance: {balance}")  # Debug log
-                if balance is not None and balance >= 0:
+            settings = Setting.get_solo()
+
+            match settings.authorization_flow:
+                case "grant_all":
                     print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
                     return JsonResponse({"access": "GRANT"})
-                
-            print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
-            return JsonResponse({"access": "REJECT"})
+                case "reject_all":
+                    print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+                    return JsonResponse({"access": "REJECT"})
+                case _:
+            
+                    # Normal flow: check mapping
+                    mapping = AccountMapping.objects.filter(device_access_id=device_access_id).first()
+                    if mapping:
+                        balance = get_palladium_balance(mapping.device_access_id)
+                        print(f"Access ID: {device_access_id}, Palladium ID: {mapping.device_access_id}, Balance: {balance}")  # Debug log
+                        if balance is not None and balance >= settings.balance_threshold:
+                            print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                            return JsonResponse({"access": "GRANT"})
+                        
+                    print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+                    return JsonResponse({"access": "REJECT"})
             
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
