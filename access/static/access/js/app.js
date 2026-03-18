@@ -69,13 +69,26 @@ function pollTempMapping() {
 
 function confirmMapping() {
     const device_access_id = document.getElementById("pendingMa300").innerText;
+    console.log(device_access_id);
+    if(device_access_id == "Waiting for biometric/card input..."){
+        alert("Please scan fingerprint or card to get the device access ID before confirming.");
+        return;
+    }
     fetch("/confirm-mapping", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: "{\"device_access_id\": \"" + device_access_id + "\", \"account_user_id\": \"" + selectedPalladiumId + "\"}"
-    }).then(res => res.json()).then(data => {
-        alert("Connection saved!");
+    }).then(res => {
+        if (!res.ok) {
+            return res.json().then(errData => {
+                throw new Error(errData.error || "Unknown error");
+            });}
+        return res.json();
+    }).then(data => {
         closeMappingModal();
+        alert("User connection successfully saved!");
         location.reload();
+    }).catch(err => {
+        alert("Error saving connection | " + err);
     });
 }

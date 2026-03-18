@@ -141,7 +141,10 @@ def confirm_mapping(request):
             account_user_id = data.get("account_user_id")
             print("Extracted data:", device_access_id, account_user_id)  # Debug log
 
-            AccountMapping.objects.update_or_create(device_access_id=device_access_id, defaults={"account_user_id": account_user_id})
+            if AccountMapping.objects.filter(device_access_id=device_access_id).exists():
+                return JsonResponse({"error": "This device access ID is already mapped to another account"}, status=400)
+
+            AccountMapping.objects.update_or_create( account_user_id=account_user_id, defaults={"device_access_id": device_access_id})
             PendingAccountMapping.objects.all().delete()
             return JsonResponse({"status": "created"}, status=201)
         except json.JSONDecodeError:
