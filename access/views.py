@@ -5,7 +5,8 @@ from django.db import connection
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
-from .models import AccountMapping, PendingAccountMapping, MappingModalState
+from .models import AccountMapping, PendingAccountMapping, MappingModalState, Setting
+from .forms import SettingForm
 
 test_users = [
     {'account_user_id': 904738, 'full_name': 'Youssef Diallo', 'balance': -7.53, 'device_access_id': 175750, 'connected': True},
@@ -136,3 +137,22 @@ def confirm_mapping(request):
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
     else:
         return JsonResponse({"error": "Invalid request method"}, status=405)
+
+def settings_view(request):
+    """View to display and update settings"""
+    settings_obj = Setting.get_solo()
+
+    print('view')
+    
+    if request.method == 'POST':
+        print('post')
+        form = SettingForm(request.POST, instance=settings_obj)
+        print(form)
+        if form.is_valid():
+            print("form valid")
+            form.save()
+            return render(request, 'access/settings.html', {'form': form, 'message': 'Settings updated successfully!'})
+    else:
+        form = SettingForm(instance=settings_obj)
+    
+    return render(request, 'access/settings.html', {'form': form})

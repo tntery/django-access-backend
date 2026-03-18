@@ -1,4 +1,5 @@
 from django.db import models
+from solo.models import SingletonModel
 
 class AccountMapping(models.Model):
     """Model to store the mapping between access control device IDs and accounting system IDs"""
@@ -50,4 +51,19 @@ class MappingModalState(models.Model):
 
     def __str__(self):
         return f"{str(self.state).upper()}"
+    
+class Setting(SingletonModel):
+    """Singleton model to store application """
+
+    AUTHORIZATION_FLOW_CHOICES = [
+        ('grant_all', 'Grant All'),
+        ('reject_all', 'Reject All'),
+        ('check_balance', 'Check Balance'),
+    ]
+    
+    authorization_flow = models.CharField(max_length=20, choices=AUTHORIZATION_FLOW_CHOICES, default='check_balance', help_text="Authorization flow to determine access decisions")
+    balance_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, null=True, blank=True, help_text="Minimum balance required for access")
+
+    def __str__(self):
+        return f": authorization_flow={self.authorization_flow}, balance_threshold={self.balance_threshold}"
 
