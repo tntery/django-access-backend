@@ -142,7 +142,7 @@ def confirm_mapping(request):
             print("Extracted data:", device_access_id, account_user_id)  # Debug log
 
             if AccountMapping.objects.filter(device_access_id=device_access_id).exists():
-                return JsonResponse({"error": "This device access ID is already mapped to another account"}, status=400)
+                return JsonResponse({"error": "This device's Access ID is already mapped to another account"}, status=400)
 
             AccountMapping.objects.update_or_create( account_user_id=account_user_id, defaults={"device_access_id": device_access_id})
             PendingAccountMapping.objects.all().delete()
@@ -151,6 +151,26 @@ def confirm_mapping(request):
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
     else:
         return JsonResponse({"error": "Invalid request method"}, status=405)
+
+@csrf_exempt
+def unmap_mapping(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            account_user_id = data.get("account_user_id")
+
+            mapping = AccountMapping.objects.filter(account_user_id=account_user_id).first()
+            if not mapping:
+                return JsonResponse({"error": "No mapping found for that account user."}, status=404)
+
+            mapping.device_access_id = None
+            mapping.save()
+            return JsonResponse({"status": "unmapped"}, status=200)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    else:
+        return JsonResponse({"error": "Invalid request method"}, status=405)
+
 
 def settings_view(request):
     """View to display and update settings"""

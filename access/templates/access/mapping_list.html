@@ -10,6 +10,9 @@
 {% block content %}
 
 <div class="container mt-4">
+
+    <div id="alert-container"></div>
+
     <h2 class="h4 mt-5">User Connections</h2>
     <p>Manage your connection pairing between the access control system user and the corresponding accounting system user here.</p>
 
@@ -34,13 +37,13 @@
                 <span class="badge bg-danger">Not Connected</span>
             {% endif %}
             <!-- Pending badge if modal open and TempMapping exists -->
-            <span id="pendingBadge-{{ u.account_user_id }}" class="badge bg-warning d-none">Pending Mapping</span>
+            <span id="pendingBadge-{{ u.account_user_id }}" class="badge bg-warning d-none">Pending Connection</span>
             </td>
             <td>
             {% if u.connected %}
-                <button class="btn btn-sm btn-outline-success btn-sm" onclick="openMappingModal(this)">
-                    Reconnect
-                    <i class="bi bi-plug ms-1"></i>
+                <button class="btn btn-sm btn-outline-danger" onclick="openUnmapModal(this)">
+                    Disconnect
+                    <i class="bi bi-x-circle ms-1"></i>
                 </button>
             {% else %}
                 <button class="btn btn-sm btn-primary" onclick="openMappingModal(this)">
@@ -60,10 +63,14 @@
     <div class="modal-dialog">
         <div class="modal-content">
         <div class="modal-header bg-warning">
-            <h5 class="modal-title">Connection Pending</h5>
+            <h5 class="modal-title" id="mappingModalTitle">Connection Pending</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="closeMappingModal()"></button>
         </div>
         <div class="modal-body">
+            <div id="modalAlert" class="alert alert-danger d-flex align-items-center d-none" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <div></div>
+            </div>
             <table class="table table-borderless mb-0">
                 <tr>
                     <th class="col-5">Full Name:</th>
@@ -73,14 +80,14 @@
                     <th class="col-5">Palladium User ID:</th>
                     <td><span id="pendingPalladium" class="text-dark"></span></td>
                 </tr>
-                <tr>
+                <tr id="pendingMa300Row">
                     <th class="col-5">Pending MA300 ID:</th>
                     <td><span id="pendingMa300" class="text-primary fw-bold"></span></td>
                 </tr>
             </table>
         </div>
         <div class="modal-footer">
-            <button class="btn btn-success" onclick="confirmMapping()">
+            <button id="modalConfirmBtn" class="btn btn-success" onclick="confirmMapping()">
                 Confirm
                 <i class="bi bi-plugin ms-1"></i>
             </button>
