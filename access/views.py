@@ -1,40 +1,57 @@
-import psycopg2
-import random
 import json
-from django.db import connection
+import sqlite3
+from pathlib import Path
+
+from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from .models import AccountMapping, PendingAccountMapping, MappingModalState, Setting
 from .forms import SettingForm
 
-test_users = [
-    {'account_user_id': 904738, 'full_name': 'Youssef Diallo', 'balance': -7.53, 'device_access_id': 175750, 'connected': True},
-    {'account_user_id': 984768, 'full_name': 'Moussa Diallo', 'balance': -5.99, 'device_access_id': 979017, 'connected': True},
-    {'account_user_id': 199568, 'full_name': 'Chioma Osei', 'balance': 7.7, 'device_access_id': 123456, 'connected': False},
-    {'account_user_id': 955902, 'full_name': 'Nia Mensah', 'balance': -2.55, 'device_access_id': None, 'connected': True},
-    {'account_user_id': 424644, 'full_name': 'Bamidele Toure', 'balance': 0.76, 'device_access_id': 968538, 'connected': True},
-    {'account_user_id': 105832, 'full_name': 'Zuberi Kalu', 'balance': 2.41, 'device_access_id': 648219, 'connected': False},
-    {'account_user_id': 739210, 'full_name': 'Amara Dlamini', 'balance': -1.18, 'device_access_id': None, 'connected': True},
-    {'account_user_id': 552109, 'full_name': 'Tendai Bekele', 'balance': 9.87, 'device_access_id': 443210, 'connected': False},
-    {'account_user_id': 883201, 'full_name': 'Kofi Okonkwo', 'balance': -4.32, 'device_access_id': 129034, 'connected': True},
-    {'account_user_id': 664903, 'full_name': 'Fatoumata Keita', 'balance': 6.54, 'device_access_id': None, 'connected': False},
-    {'account_user_id': 221094, 'full_name': 'Kwame Gbeho', 'balance': -9.91, 'device_access_id': 882019, 'connected': True},
-    {'account_user_id': 334812, 'full_name': 'Lerato Sow', 'balance': 0.05, 'device_access_id': 551029, 'connected': True},
-    {'account_user_id': 445723, 'full_name': 'Oluchi Chineke', 'balance': 3.22, 'device_access_id': None, 'connected': False},
-    {'account_user_id': 990123, 'full_name': 'Tariro Moyo', 'balance': -8.76, 'device_access_id': 771023, 'connected': True},
-    {'account_user_id': 123456, 'full_name': 'Zanele Luthuli', 'balance': 5.43, 'device_access_id': 662019, 'connected': False},
-] # Simulated user data for testing
+EXTERNAL_ACCOUNTING_DB_NAME = 'external_accounting.sqlite3'
 
 def get_test_users():
-    """Simulate fetching user data from the accounting system database (replace with actual DB query)"""
-    # for mapping in AccountMapping.objects.all(): get the corresponding user from test_users and update the device_access_id and connected status based on the mapping. connected = True if mapping exists and device_access_id is not None, otherwise False. This simulates the state of the users based on the current mappings in the database.
-    for mapping in AccountMapping.objects.all():
-        for user in test_users:
-            if str(user['account_user_id']) == mapping.account_user_id:
-                user['device_access_id'] = mapping.device_access_id
-                user['connected'] = True if mapping.device_access_id else False
-    return test_users
+    """Fetch users from the mock external accounting DB and merge mapping state."""
+    external_db_path = Path(settings.BASE_DIR) / EXTERNAL_ACCOUNTING_DB_NAME
+    if not external_db_path.exists():
+        return []
+
+    try:
+        with sqlite3.connect(external_db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''
+                SELECT account_user_id, full_name, balance
+                FROM accounting_users
+                ORDER BY full_name
+                '''
+            )
+            external_users = cursor.fetchall()
+    except sqlite3.Error:
+        return []
+
+    mapping_lookup = {
+        mapping.account_user_id: mapping.device_access_id
+        for mapping in AccountMapping.objects.all()
+    }
+
+    users = []
+    for account_user_id, full_name, balance in external_users:
+        mapped_device_access_id = mapping_lookup.get(str(account_user_id))
+        users.append(
+            {
+                'account_user_id': str(account_user_id),
+                'full_name': full_name,
+                'balance': float(balance),
+                'device_access_id': mapped_device_access_id,
+                'connected': bool(mapped_device_access_id),
+            }
+        )
+
+    print(users)  # Debug log to verify users data
+
+    return users
 
 
 def settings_view(request):
@@ -53,8 +70,8 @@ def settings_view(request):
 
 
 def get_palladium_balance(device_access_id):
-    """Return a random balance for the given device_access_id (replace with actual DB query)"""
-    # from get_test_users(), find the user with the matching device_access_id and return their balance. This simulates fetching the balance from the accounting system based on the mapping.
+    """Return a balance from the external accounting data for the mapped device_access_id."""
+    # Pull current users from the external accounting DB and locate the mapped user balance.
     for user in get_test_users():
         if str(user['device_access_id']) == str(device_access_id):
             print(f"Found user for device_access_id {device_access_id}: {user['full_name']} with balance {user['balance']}")  # Debug log
@@ -117,7 +134,7 @@ def access_event_view(request):
 def account_mapping_list_view(request):
     """Return a list of all mappings of the access control user to the different external system accounts for display in the admin interface"""
 
-    # TODO: In a real implementation, this would pull from the actual accounting system database to get the list of users and their corresponding mappings. For testing, we will use the get_test_users() function which simulates this by combining the test_users data with the current state of the AccountMapping in the database to return the list of users with their mapping status for display in the admin interface.
+    # User data is read from the mock external accounting SQLite DB and merged with current mapping state.
     # TODO : Add filtering and pagination as needed for real implementation when pulling from actual database with potentially large number of users.
     return render(request, "access/mapping_list.html", {"users": get_test_users()})
 
