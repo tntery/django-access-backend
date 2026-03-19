@@ -1,12 +1,12 @@
 from django.urls import path
-from .views import access_event, account_mapping_list, set_modal_state, poll_temp_mapping, confirm_mapping, unmap_mapping, settings_view
+from .views import access_event_view, account_mapping_list_view, set_modal_state_view, api_account_mapping_view, settings_view
 
 urlpatterns = [
-    path('api/access', access_event, name='access_event'),
-    path('connections/', account_mapping_list, name='account_mapping_list'),
-    path('set-modal-state', set_modal_state, name='set_modal_state'),
-    path('poll-temp-mapping', poll_temp_mapping, name='poll_temp_mapping'),
-    path('confirm-mapping', confirm_mapping, name='confirm_mapping'),
-    path('unmap-mapping', unmap_mapping, name='unmap_mapping'),
+    path('', account_mapping_list_view, name='account_mapping_list'),
     path('settings/', settings_view, name='settings'),
+    
+    path('api/access', access_event_view, name='access_event'),
+    path('api/modal-state', set_modal_state_view, name='set_modal_state'),
+    path('api/mappings/<str:account_user_id>', api_account_mapping_view, name='api_account_mapping_view_pending'),
+    path('api/mappings', api_account_mapping_view, name='api_account_mapping_view'),
 ]

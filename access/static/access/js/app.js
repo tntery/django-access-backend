@@ -45,10 +45,16 @@ function showAlert(message, type = 'success', placement = 'body') {
 }
 
 function updateDBModalState(state) {
-    fetch("/set-modal-state", {
+    fetch("api/modal-state", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({ state })
+    }).then(res => {
+        if (!res.ok) {
+            console.error("Failed to update modal state in DB");
+        }    
+    }).catch(err => {
+        console.error("Error updating modal state in DB:", err);
     });
 }
 
@@ -146,9 +152,13 @@ function closeMappingModal() {
 
 function pollTempMapping() {
     pollMappingIntervalId = setInterval(() => {
-        fetch("/poll-temp-mapping")
-        .then(res => res.json())
-        .then(data => {
+        fetch("api/mappings/pending")
+        .then(res => {
+            if (!res.ok) {
+                throw new Error("Failed to fetch pending mapping");
+            }   
+            return res.json();
+        }).then(data => {
             const ma300Element = document.getElementById("pendingMa300");
             const newId = data.device_access_id || "Waiting for biometric/card input...";
             ma300Element.innerText = newId;
@@ -157,22 +167,26 @@ function pollTempMapping() {
             if (data.device_access_id) {
                 ma300Element.classList.remove("blink");
             }
+        }).catch(err => {
+            console.error("Error fetching pending mapping:", err);
         });   
     }, 2000);
 }
 
 function confirmMapping() {
     if (modalMode === 'unmap') {
-        return confirmUnmap();
+        // Remove mapping flow
+        return removeMapping();
     }
 
+    // Create mapping flow
     const device_access_id = document.getElementById("pendingMa300").innerText;
     if(device_access_id === "Waiting for biometric/card input..."){
         showAlert("Please scan fingerprint/card to get the device access ID before confirming.", 'danger', 'modal');
         return;
     }
 
-    fetch("/confirm-mapping", {
+    fetch("api/mappings", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({ device_access_id, account_user_id: selectedPalladiumId })
@@ -192,16 +206,15 @@ function confirmMapping() {
     });
 }
 
-function confirmUnmap() {
-    fetch("/unmap-mapping", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ account_user_id: selectedPalladiumId })
-    }).then(res => {
+function removeMapping() {
+    fetch("api/mappings/" + selectedPalladiumId, {
+        method: "DELETE",
+        // headers: {"Content-Type": "application/json"},
+        // body: JSON.stringify({ account_user_id: selectedPalladiumId })
+    }).then(async res => {
         if (!res.ok) {
-            return res.json().then(errData => {
-                throw new Error(errData.error || "Unknown error");
-            });
+            const errData = await res.json();
+            throw new Error(errData.error || "Unknown error");
         }
         return res.json();
     }).then(data => {

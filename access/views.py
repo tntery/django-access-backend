@@ -34,8 +34,23 @@ def get_test_users():
             if str(user['account_user_id']) == mapping.account_user_id:
                 user['device_access_id'] = mapping.device_access_id
                 user['connected'] = True if mapping.device_access_id else False
-        
     return test_users
+
+
+def settings_view(request):
+    """View to display and update settings"""
+    settings_obj = Setting.get_solo()
+    
+    if request.method == 'POST':
+        form = SettingForm(request.POST, instance=settings_obj)
+        if form.is_valid():
+            form.save()
+            return render(request, 'access/settings.html', {'form': form, 'message': 'Settings updated successfully!'})
+    else:
+        form = SettingForm(instance=settings_obj)
+    
+    return render(request, 'access/settings.html', {'form': form})
+
 
 def get_palladium_balance(device_access_id):
     """Return a random balance for the given device_access_id (replace with actual DB query)"""
@@ -44,9 +59,10 @@ def get_palladium_balance(device_access_id):
         if str(user['device_access_id']) == str(device_access_id):
             print(f"Found user for device_access_id {device_access_id}: {user['full_name']} with balance {user['balance']}")  # Debug log
             return user['balance']
-        
+
+
 @csrf_exempt
-def access_event(request):
+def access_event_view(request):
     """Handle access event from access control device"""
     if request.method == "POST":
 
@@ -97,21 +113,85 @@ def access_event(request):
     else:
         return JsonResponse({"error": "Invalid request method"}, status=405)
 
-def account_mapping_list(request):
+
+def account_mapping_list_view(request):
     """Return a list of all mappings of the access control user to the different external system accounts for display in the admin interface"""
 
+    # TODO: In a real implementation, this would pull from the actual accounting system database to get the list of users and their corresponding mappings. For testing, we will use the get_test_users() function which simulates this by combining the test_users data with the current state of the AccountMapping in the database to return the list of users with their mapping status for display in the admin interface.
+    # TODO : Add filtering and pagination as needed for real implementation when pulling from actual database with potentially large number of users.
     return render(request, "access/mapping_list.html", {"users": get_test_users()})
 
+
 @csrf_exempt
-def set_modal_state(request):
+def api_account_mapping_view(request, account_user_id=None):
+    """API endpoint to return list of mappings based on account_user_id filter (e.g. pending)"""
+    match request.method:
+        case "GET":
+            return handle_get_pending_mapping(request, account_user_id)
+        case "POST":
+            return handle_create_mapping(request)
+        case "DELETE":
+            return handle_delete_mapping(request, account_user_id)
+        case _:
+            return JsonResponse({"error": "Invalid request method"}, status=405)
+
+
+def handle_get_pending_mapping(request, account_user_id=None):
+    """Handle GET request to return pending mapping or all mappings based on account_user_id filter"""
+    if account_user_id is None:
+        # return message that account_user_id filter is required for GET requests
+        return JsonResponse({"error": "account_user_id filter is required for GET request"}, status=400)
+    else:
+        if account_user_id == "pending":
+            temp = PendingAccountMapping.objects.first()
+            return JsonResponse({"device_access_id": temp.device_access_id if temp else None})
+        else:
+            # return message that only pending filter is supported for GET requests
+            return JsonResponse({"error": "Invalid filter for GET request. Only 'pending' is supported."}, status=400)
+
+
+def handle_create_mapping(request):
+    """Handle POST request to create/update mapping between access control user and accounting system user"""
+    try:
+        data = json.loads(request.body)
+        print("JSON data:", data)  # Debug log
+
+        device_access_id = data.get("device_access_id")
+        account_user_id = data.get("account_user_id")
+        print("Extracted data:", device_access_id, account_user_id)  # Debug log
+
+        if AccountMapping.objects.filter(device_access_id=device_access_id).exists():
+            return JsonResponse({"error": "This device's Access ID is already mapped to another account"}, status=400)
+
+        AccountMapping.objects.update_or_create( account_user_id=account_user_id, defaults={"device_access_id": device_access_id})
+        PendingAccountMapping.objects.all().delete()
+        return JsonResponse({"status": "created"}, status=201)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+
+def handle_delete_mapping(request, account_user_id=None):
+    """Handle DELETE request to remove mapping between access control user and accounting system user (set device_access_id to null for the given account_user_id)"""
+    if account_user_id is None:
+        return JsonResponse({"error": "account_user_id filter is required for DELETE request"}, status=400) 
+
+    mapping = AccountMapping.objects.filter(account_user_id=account_user_id).first()
+    if not mapping:
+        return JsonResponse({"error": "No mapping found for that account user."}, status=404)
+
+    mapping.device_access_id = None
+    mapping.save()
+    return JsonResponse({"status": "unmapped"}, status=200)
+
+    
+@csrf_exempt
+def set_modal_state_view(request):
+    """API endpoint to set the state of the mapping modal (open/closed)"""
     if request.method == "POST":
         print("Received modal state update:", request.body)  # Debug log
         try:
             data = json.loads(request.body)
-            print("JSON data:", data)  # Debug log
-
             state = data.get("state")
-            print("Extracted state:", state)  # Debug log
 
             MappingModalState.objects.update_or_create(id=1, defaults={"state": state})
 
@@ -124,69 +204,3 @@ def set_modal_state(request):
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
     else:
         return JsonResponse({"error": "Invalid request method"}, status=405)
-    
-def poll_temp_mapping(request):
-    temp = PendingAccountMapping.objects.first()
-    return JsonResponse({"device_access_id": temp.device_access_id if temp else None})
-
-@csrf_exempt
-def confirm_mapping(request):
-    if request.method == "POST":
-
-        try:
-            data = json.loads(request.body)
-            print("JSON data:", data)  # Debug log
-
-            device_access_id = data.get("device_access_id")
-            account_user_id = data.get("account_user_id")
-            print("Extracted data:", device_access_id, account_user_id)  # Debug log
-
-            if AccountMapping.objects.filter(device_access_id=device_access_id).exists():
-                return JsonResponse({"error": "This device's Access ID is already mapped to another account"}, status=400)
-
-            AccountMapping.objects.update_or_create( account_user_id=account_user_id, defaults={"device_access_id": device_access_id})
-            PendingAccountMapping.objects.all().delete()
-            return JsonResponse({"status": "created"}, status=201)
-        except json.JSONDecodeError:
-            return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    else:
-        return JsonResponse({"error": "Invalid request method"}, status=405)
-
-@csrf_exempt
-def unmap_mapping(request):
-    if request.method == "POST":
-        try:
-            data = json.loads(request.body)
-            account_user_id = data.get("account_user_id")
-
-            mapping = AccountMapping.objects.filter(account_user_id=account_user_id).first()
-            if not mapping:
-                return JsonResponse({"error": "No mapping found for that account user."}, status=404)
-
-            mapping.device_access_id = None
-            mapping.save()
-            return JsonResponse({"status": "unmapped"}, status=200)
-        except json.JSONDecodeError:
-            return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    else:
-        return JsonResponse({"error": "Invalid request method"}, status=405)
-
-
-def settings_view(request):
-    """View to display and update settings"""
-    settings_obj = Setting.get_solo()
-
-    print('view')
-    
-    if request.method == 'POST':
-        print('post')
-        form = SettingForm(request.POST, instance=settings_obj)
-        print(form)
-        if form.is_valid():
-            print("form valid")
-            form.save()
-            return render(request, 'access/settings.html', {'form': form, 'message': 'Settings updated successfully!'})
-    else:
-        form = SettingForm(instance=settings_obj)
-    
-    return render(request, 'access/settings.html', {'form': form})
