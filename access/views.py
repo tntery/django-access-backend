@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from django.conf import settings
@@ -18,7 +19,7 @@ def get_test_users():
         return []
 
     try:
-        with sqlite3.connect(external_db_path) as conn:
+        with closing(sqlite3.connect(external_db_path)) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 '''

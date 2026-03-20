@@ -1,5 +1,6 @@
 import random
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from django.conf import settings
@@ -36,7 +37,7 @@ class Command(BaseCommand):
         return Path(settings.BASE_DIR) / EXTERNAL_ACCOUNTING_DB_NAME
 
     def _seed_external_accounting_db(self, db_path: Path) -> None:
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path)) as conn:
             cursor = conn.cursor()
             cursor.execute('DROP TABLE IF EXISTS accounting_users')
             cursor.execute(
@@ -68,7 +69,7 @@ class Command(BaseCommand):
             conn.commit()
 
     def _read_external_accounting_users(self, db_path: Path) -> list[str]:
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path)) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 '''
