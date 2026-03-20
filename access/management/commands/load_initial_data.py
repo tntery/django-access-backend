@@ -6,6 +6,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from access.models import AccountMapping, MappingModalState
+from access.management.seed_data import INITIAL_ACCOUNT_MAPPINGS
 
 EXTERNAL_ACCOUNTING_DB_NAME = 'external_accounting.sqlite3'
 
@@ -27,21 +28,6 @@ SEED_ACCOUNTING_USERS = [
     {'account_user_id': '990123', 'full_name': 'Tariro Moyo', 'balance': -8.76},
     {'account_user_id': '123456', 'full_name': 'Zanele Luthuli', 'balance': 5.43},
 ]
-
-# Internal bootstrap mapping data used to seed this app's mapping table.
-INITIAL_ACCOUNT_MAPPINGS = {
-    '904738': '175750',
-    '984768': '979017',
-    '199568': '123456',
-    '424644': '968538',
-    '105832': '648219',
-    '552109': '443210',
-    '883201': '129034',
-    '221094': '882019',
-    '334812': '551029',
-    '990123': '771023',
-    '123456': '662019',
-}
 
 class Command(BaseCommand):
     help = 'Create a mock external accounting SQLite DB and bootstrap initial account mappings from it'
