@@ -7,7 +7,7 @@ from pathlib import Path
 from django.core.management import call_command
 from django.test import TestCase
 
-from .models import AccountMapping, MappingModalState, PendingAccountMapping, Setting
+from .models import AccessEventLog, AccountMapping, MappingModalState, PendingAccountMapping, Setting
 from .views import EXTERNAL_ACCOUNTING_DB_NAME, get_test_users
 
 
@@ -88,6 +88,8 @@ class AccessEventViewTests(TestCase, ExternalAccountingDbMixin):
 		self.assertEqual(response.json(), {'access': 'REJECT'})
 		self.assertEqual(PendingAccountMapping.objects.count(), 1)
 		self.assertEqual(PendingAccountMapping.objects.first().device_access_id, 'D-100')
+		self.assertEqual(AccessEventLog.objects.count(), 1)
+		self.assertEqual(AccessEventLog.objects.first().access_status, 'reject')
 
 	def test_access_event_grants_when_authorization_flow_is_grant_all(self):
 		self.settings_obj.authorization_flow = 'grant_all'
@@ -101,6 +103,23 @@ class AccessEventViewTests(TestCase, ExternalAccountingDbMixin):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.json(), {'access': 'GRANT'})
+		self.assertEqual(AccessEventLog.objects.count(), 1)
+		self.assertEqual(AccessEventLog.objects.first().access_status, 'grant')
+
+	def test_access_event_rejects_when_authorization_flow_is_reject_all(self):
+		self.settings_obj.authorization_flow = 'reject_all'
+		self.settings_obj.save()
+
+		response = self.client.post(
+			'/api/access',
+			data=json.dumps({'access_id': 'D-201'}),
+			content_type='application/json',
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json(), {'access': 'REJECT'})
+		self.assertEqual(AccessEventLog.objects.count(), 1)
+		self.assertEqual(AccessEventLog.objects.first().access_status, 'reject')
 
 	def test_access_event_check_balance_grants_when_balance_meets_threshold(self):
 		self.settings_obj.authorization_flow = 'check_balance'
@@ -128,6 +147,9 @@ class AccessEventViewTests(TestCase, ExternalAccountingDbMixin):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.json(), {'access': 'GRANT'})
+		log = AccessEventLog.objects.get(device_access_id='D-700')
+		self.assertEqual(log.access_status, 'grant')
+		self.assertEqual(log.account_user_id, '700')
 
 	def test_access_event_check_balance_rejects_when_balance_below_threshold(self):
 		self.settings_obj.authorization_flow = 'check_balance'
@@ -155,6 +177,9 @@ class AccessEventViewTests(TestCase, ExternalAccountingDbMixin):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.json(), {'access': 'REJECT'})
+		log = AccessEventLog.objects.get(device_access_id='D-701')
+		self.assertEqual(log.access_status, 'reject')
+		self.assertEqual(log.account_user_id, '701')
 
 
 class ApiMappingViewTests(TestCase):

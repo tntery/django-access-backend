@@ -7,10 +7,20 @@ from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
-from .models import AccountMapping, PendingAccountMapping, MappingModalState, Setting
+from .models import AccessEventLog, AccountMapping, PendingAccountMapping, MappingModalState, Setting
 from .forms import SettingForm
 
 EXTERNAL_ACCOUNTING_DB_NAME = 'external_accounting.sqlite3'
+
+
+def _log_access_event(device_access_id, access_status, mapping=None):
+    """Persist access decisions for auditing and troubleshooting."""
+    AccessEventLog.objects.create(
+        device_access_id=str(device_access_id) if device_access_id is not None else '',
+        account_user_id=mapping.account_user_id if mapping else None,
+        accounting_system=mapping.accounting_system if mapping else 'palladium',
+        access_status=access_status,
+    )
 
 def get_test_users():
     """Fetch users from the mock external accounting DB and merge mapping state."""
@@ -96,10 +106,13 @@ def access_event_view(request):
             device_access_id = data.get("access_id") # could be a user_id or card_id depending on the access control system
             print("Extracted device_access_id:", device_access_id)  # Debug log
 
+            mapping = AccountMapping.objects.filter(device_access_id=device_access_id).first()
+
             modal_state = MappingModalState.objects.first()
             if modal_state and modal_state.state == "open":
                 # Insert/update PendingAccountMapping with latest device_access_id
                 PendingAccountMapping.objects.update_or_create(id=1, defaults={"device_access_id": device_access_id})
+                _log_access_event(device_access_id, 'reject', mapping)
                 return JsonResponse({"access": "REJECT"})  # always reject while mapping modal is open
 
             settings = Setting.get_solo()
@@ -107,22 +120,25 @@ def access_event_view(request):
             match settings.authorization_flow:
                 case "grant_all":
                     print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                    _log_access_event(device_access_id, 'grant', mapping)
                     return JsonResponse({"access": "GRANT"})
                 case "reject_all":
                     print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+                    _log_access_event(device_access_id, 'reject', mapping)
                     return JsonResponse({"access": "REJECT"})
                 case _:
             
                     # Normal flow: check mapping
-                    mapping = AccountMapping.objects.filter(device_access_id=device_access_id).first()
                     if mapping:
                         balance = get_palladium_balance(mapping.device_access_id)
                         print(f"Access ID: {device_access_id}, Palladium ID: {mapping.device_access_id}, Balance: {balance}")  # Debug log
                         if balance is not None and balance >= settings.balance_threshold:
                             print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                            _log_access_event(device_access_id, 'grant', mapping)
                             return JsonResponse({"access": "GRANT"})
                         
                     print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+                    _log_access_event(device_access_id, 'reject', mapping)
                     return JsonResponse({"access": "REJECT"})
             
         except json.JSONDecodeError:
