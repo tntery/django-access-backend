@@ -8,6 +8,7 @@ from contextlib import closing
 from pathlib import Path
 
 from django.conf import settings
+from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
@@ -16,6 +17,7 @@ from .models import AccessEventLog, AccountMapping, PendingAccountMapping, Mappi
 from .forms import SettingForm
 
 EXTERNAL_ACCOUNTING_DB_NAME = 'external_accounting.sqlite3'
+ACCOUNT_MAPPING_PAGE_SIZE = 25
 
 env = environ.Env()
 environ.Env.read_env()
@@ -73,6 +75,29 @@ def get_test_users():
     return users
 
 
+def account_mapping_list_view(request):
+    """Return a list of all mappings of the access control user to the different external system accounts for display in the admin interface"""
+
+    # User data is read from the mock external accounting SQLite DB and merged with current mapping state.
+    # TODO : Add filtering and pagination as needed for real implementation when pulling from actual database with potentially large number of users.
+
+    user_list = AccountMapping.objects.all().order_by('-last_name', '-first_name')
+    paginator = Paginator(user_list, ACCOUNT_MAPPING_PAGE_SIZE)
+    page_obj = paginator.get_page(request.GET.get('page'))
+    last_updated = AccountMapping.objects.order_by('-last_updated_at').first()
+    print(f"Last updated time: {last_updated.last_updated_at if last_updated else '-'}")  # Debug log to verify mapping
+    # print(f"User list for mapping view: {user_list}")  # Debug log to verify user list
+    return render(
+        request,
+        "access/mapping_list.html",
+        {
+            "users": page_obj,
+            "page_obj": page_obj,
+            "last_updated": last_updated.last_updated_at if last_updated else "-",
+        },
+    )
+
+
 def settings_view(request):
     """View to display and update settings"""
     settings_obj = Setting.get_solo()
@@ -117,7 +142,6 @@ def get_accounting_balances(device_access_id, currency=None):
     except requests.RequestException as e:
         print(f"Error fetching user data for device_access_id {device_access_id} from external accounting system:", e)
         return None
-
 
 
 @csrf_exempt
@@ -231,19 +255,6 @@ def access_event_view(request):
 
     else:
         return JsonResponse({"error": "Invalid request method"}, status=405)
-
-
-def account_mapping_list_view(request):
-    """Return a list of all mappings of the access control user to the different external system accounts for display in the admin interface"""
-
-    # User data is read from the mock external accounting SQLite DB and merged with current mapping state.
-    # TODO : Add filtering and pagination as needed for real implementation when pulling from actual database with potentially large number of users.
-
-    user_list = AccountMapping.objects.all().order_by('-last_name', '-first_name')
-    last_updated = AccountMapping.objects.order_by('-last_updated_at').first()
-    print(f"Last updated time: {last_updated.last_updated_at if last_updated else '-'}")  # Debug log to verify mapping
-    # print(f"User list for mapping view: {user_list}")  # Debug log to verify user list
-    return render(request, "access/mapping_list.html", {"users": user_list, "last_updated": last_updated.last_updated_at if last_updated else "-"})
 
 
 @csrf_exempt
