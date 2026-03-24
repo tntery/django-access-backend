@@ -13,6 +13,7 @@ from django.http import JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from .filters import AccountMappingFilter
 from .models import AccessEventLog, AccountMapping, PendingAccountMapping, MappingModalState, Setting
 from .forms import SettingForm
 
@@ -82,8 +83,15 @@ def account_mapping_list_view(request):
     # TODO : Add filtering and pagination as needed for real implementation when pulling from actual database with potentially large number of users.
 
     user_list = AccountMapping.objects.all().order_by('-last_name', '-first_name')
-    paginator = Paginator(user_list, ACCOUNT_MAPPING_PAGE_SIZE)
+    mapping_filter = AccountMappingFilter(request.GET, queryset=user_list)
+
+    paginator = Paginator(mapping_filter.qs, ACCOUNT_MAPPING_PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get('page'))
+
+    query_params = request.GET.copy()
+    query_params.pop('page', None)
+    query_string = query_params.urlencode()
+
     last_updated = AccountMapping.objects.order_by('-last_updated_at').first()
     print(f"Last updated time: {last_updated.last_updated_at if last_updated else '-'}")  # Debug log to verify mapping
     # print(f"User list for mapping view: {user_list}")  # Debug log to verify user list
@@ -93,6 +101,8 @@ def account_mapping_list_view(request):
         {
             "users": page_obj,
             "page_obj": page_obj,
+            "mapping_filter": mapping_filter,
+            "query_string": query_string,
             "last_updated": last_updated.last_updated_at if last_updated else "-",
         },
     )

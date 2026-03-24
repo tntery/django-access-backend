@@ -9,7 +9,7 @@ from django.test import TestCase
 
 
 from .models import AccessEventLog, AccountMapping, MappingModalState, PendingAccountMapping, Setting
-from .views import EXTERNAL_ACCOUNTING_DB_NAME, get_test_users
+from .views import ACCOUNT_MAPPING_PAGE_SIZE, EXTERNAL_ACCOUNTING_DB_NAME, get_test_users
 
 
 class ExternalAccountingDbMixin:
@@ -73,7 +73,7 @@ class GetTestUsersTests(TestCase, ExternalAccountingDbMixin):
 
 class AccountMappingListViewTests(TestCase):
 	def test_account_mapping_list_view_paginates_results(self):
-		for index in range(12):
+		for index in range(ACCOUNT_MAPPING_PAGE_SIZE + 2):
 			AccountMapping.objects.create(
 				account_user_id=f'{index:03d}',
 				first_name='User',
@@ -92,6 +92,28 @@ class AccountMappingListViewTests(TestCase):
 			[mapping.account_user_id for mapping in response.context['users']],
 			['001', '000'],
 		)
+
+	def test_account_mapping_list_view_filters_connected_users(self):
+		AccountMapping.objects.create(
+			account_user_id='100',
+			first_name='Connected',
+			last_name='User',
+			device_access_id='A-100',
+			accounting_system='palladium',
+		)
+		AccountMapping.objects.create(
+			account_user_id='101',
+			first_name='Not',
+			last_name='Connected',
+			device_access_id=None,
+			accounting_system='palladium',
+		)
+
+		response = self.client.get('/?connection_status=connected')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(len(response.context['users']), 1)
+		self.assertEqual(response.context['users'][0].account_user_id, '100')
 
 
 class AccessEventViewTests(TestCase, ExternalAccountingDbMixin):

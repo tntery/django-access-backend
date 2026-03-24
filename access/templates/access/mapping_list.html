@@ -16,6 +16,25 @@
     <h2 class="h4 mt-5">User Connections</h2>
     <p>Manage your connection pairing between the access control system user and the corresponding accounting system user here.</p>
 
+    <form method="get" class="row g-3 mt-1 align-items-end">
+        <div class="col-md-4">
+            {{ mapping_filter.form.search.label_tag }}
+            {{ mapping_filter.form.search }}
+        </div>
+        <div class="col-md-3">
+            {{ mapping_filter.form.connection_status.label_tag }}
+            {{ mapping_filter.form.connection_status }}
+        </div>
+        <div class="col-md-3">
+            {{ mapping_filter.form.account_user_id.label_tag }}
+            {{ mapping_filter.form.account_user_id }}
+        </div>
+        <div class="col-md-2 d-flex gap-2">
+            <button type="submit" class="btn btn-primary w-100">Filter</button>
+            <a href="{% url 'account_mapping_list' %}" class="btn btn-outline-secondary w-100">Clear</a>
+        </div>
+    </form>
+
     <table class="table table-striped mt-5 border-top">
         <thead>
         <tr>
@@ -67,17 +86,17 @@
     <nav aria-label="User connections pages" class="mt-4">
         <ul class="pagination justify-content-center">
             <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
-                <a class="page-link" href="?page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}" aria-label="Previous">
+                <a class="page-link" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}" aria-label="Previous">
                     Previous
                 </a>
             </li>
             {% for page_number in page_obj.paginator.page_range %}
             <li class="page-item {% if page_number == page_obj.number %}active{% endif %}">
-                <a class="page-link" href="?page={{ page_number }}">{{ page_number }}</a>
+                <a class="page-link" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ page_number }}">{{ page_number }}</a>
             </li>
             {% endfor %}
             <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
-                <a class="page-link" href="?page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ page_obj.paginator.num_pages }}{% endif %}" aria-label="Next">
+                <a class="page-link" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ page_obj.paginator.num_pages }}{% endif %}" aria-label="Next">
                     Next
                 </a>
             </li>
