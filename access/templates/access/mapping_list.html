@@ -20,7 +20,8 @@
         <thead>
         <tr>
             <th>Full Name</th>
-            <th class="text-end pe-5 ps-0">Balance ($)</th>
+            <th class="text-end pe-5 ps-0">USD Balance</th>
+            <th class="text-end pe-5 ps-0">ZWG Balance</th>
             <th>Status</th>
             <th>Action</th>
         </tr>
@@ -28,10 +29,11 @@
         <tbody>
         {% for u in users %}
         <tr data-palladium-id="{{ u.account_user_id }}" data-full-name="{{ u.full_name }}">
-            <td>{{ u.full_name }}</td>
-            <td class="text-end pe-5 ps-0">{{ u.balance }}</td>
+            <td>{{ u.get_full_name }}</td>
+            <td class="text-end pe-5 ps-0">{{ u.usd_balance }}</td>
+            <td class="text-end pe-5 ps-0">{{ u.zwg_balance }}</td>
             <td>
-            {% if u.connected %}
+            {% if u.device_access_id %}
                 <span class="badge bg-success">Connected</span>
             {% else %}
                 <span class="badge bg-danger">Not Connected</span>
@@ -40,7 +42,7 @@
             <span id="pendingBadge-{{ u.account_user_id }}" class="badge bg-warning d-none">Pending Connection</span>
             </td>
             <td>
-            {% if u.connected %}
+            {% if u.device_access_id %}
                 <button class="btn btn-sm btn-outline-danger" onclick="openUnmapModal(this)">
                     Disconnect
                     <i class="bi bi-x-circle ms-1"></i>
@@ -52,6 +54,10 @@
                 </button>
             {% endif %}
             </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="5" class="text-center">No users found.</td>
         </tr>
         {% endfor %}
         </tbody>
