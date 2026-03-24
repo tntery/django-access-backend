@@ -72,6 +72,20 @@ class GetTestUsersTests(TestCase, ExternalAccountingDbMixin):
 
 
 class AccountMappingListViewTests(TestCase):
+	def test_account_mapping_list_view_shows_sync_button_and_last_updated(self):
+		AccountMapping.objects.create(
+			account_user_id='900',
+			first_name='Sync',
+			last_name='User',
+			accounting_system='palladium',
+		)
+
+		response = self.client.get('/')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'Sync Users')
+		self.assertContains(response, 'Last updated:')
+
 	def test_account_mapping_list_view_paginates_results(self):
 		for index in range(ACCOUNT_MAPPING_PAGE_SIZE + 2):
 			AccountMapping.objects.create(

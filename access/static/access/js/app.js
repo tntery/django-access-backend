@@ -206,6 +206,34 @@ function confirmMapping() {
     });
 }
 
+function syncUsers() {
+    const syncButton = document.getElementById('syncUsersBtn');
+    if (syncButton) {
+        syncButton.disabled = true;
+        syncButton.innerHTML = 'Syncing... <i class="bi bi-arrow-repeat ms-1"></i>';
+    }
+
+    fetch('api/mappings/update', {
+        method: 'POST',
+    }).then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.error || 'Unable to sync users.');
+        }
+        return data;
+    }).then(() => {
+        showAlert('Users synced successfully!', 'success');
+        setTimeout(() => { location.reload(); }, 5000);
+    }).catch((err) => {
+        showAlert(`Error syncing users: ${err.message}`, 'danger');
+    }).finally(() => {
+        if (syncButton) {
+            syncButton.disabled = false;
+            syncButton.innerHTML = 'Sync Users <i class="bi bi-arrow-repeat ms-1"></i>';
+        }
+    });
+}
+
 function removeMapping() {
     fetch("api/mappings/" + selectedPalladiumId, {
         method: "DELETE",

@@ -355,7 +355,7 @@ def fetch_external_users():
             ],
             update_conflicts=True,
             unique_fields=['account_user_id',],
-            update_fields=['first_name', 'last_name', 'usd_balance', 'zwg_balance']
+            update_fields=['first_name', 'last_name', 'usd_balance', 'zwg_balance', 'last_updated_at']
         )
 
         return JsonResponse({"status": "external users updated"}, status=HTTPStatus.OK)
