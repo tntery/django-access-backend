@@ -75,12 +75,15 @@ class Setting(SingletonModel):
     AUTHORIZATION_FLOW_CHOICES = [
         ('grant_all', 'Grant All'),
         ('reject_all', 'Reject All'),
-        ('check_balance', 'Check Balance'),
+        ('check_usd_balance', 'Check USD Balance'),
+        ('check_zwg_balance', 'Check ZWG Balance'),
+        ('check_usd_or_zwg_balance', 'Check USD/ZWG Balance'),
     ]
     
-    authorization_flow = models.CharField(max_length=20, choices=AUTHORIZATION_FLOW_CHOICES, default='check_balance', help_text="Authorization flow to determine access decisions")
-    balance_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, null=True, blank=True, help_text="Minimum balance required for access")
+    authorization_flow = models.CharField(max_length=30, choices=AUTHORIZATION_FLOW_CHOICES, default='check_usd_balance', help_text="Authorization flow to determine access decisions")
+    usd_balance_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, null=True, blank=True, help_text="Minimum USD balance required for access")
+    zwg_balance_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, null=True, blank=True, help_text="Minimum ZWG balance required for access")
 
     def __str__(self):
-        return f": authorization_flow={self.authorization_flow}, balance_threshold={self.balance_threshold}"
+        return f": authorization_flow={self.authorization_flow}, usd_balance_threshold={self.usd_balance_threshold}, zwg_balance_threshold={self.zwg_balance_threshold}"
 

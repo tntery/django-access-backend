@@ -209,14 +209,12 @@ function confirmMapping() {
 function removeMapping() {
     fetch("api/mappings/" + selectedPalladiumId, {
         method: "DELETE",
-        // headers: {"Content-Type": "application/json"},
-        // body: JSON.stringify({ account_user_id: selectedPalladiumId })
     }).then(async res => {
         if (!res.ok) {
             const errData = await res.json();
             throw new Error(errData.error || "Unknown error");
         }
-        return res.json();
+        return true;
     }).then(data => {
         closeMappingModal();
         showAlert("User disconnected successfully.", 'success');

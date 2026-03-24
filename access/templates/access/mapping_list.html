@@ -28,7 +28,7 @@
         </thead>
         <tbody>
         {% for u in users %}
-        <tr data-palladium-id="{{ u.account_user_id }}" data-full-name="{{ u.full_name }}">
+        <tr data-palladium-id="{{ u.account_user_id }}" data-full-name="{{ u.get_full_name }}">
             <td>{{ u.get_full_name }}</td>
             <td class="text-end pe-5 ps-0">{{ u.usd_balance }}</td>
             <td class="text-end pe-5 ps-0">{{ u.zwg_balance }}</td>
