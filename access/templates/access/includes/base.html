@@ -17,23 +17,16 @@
 </head>
 <body>
 
-    <nav class="navbar navbar-expand-lg bg-body-secondary">
+    <nav class="navbar bg-body-secondary d-flex">
         <div class="container">
             <a class="navbar-brand" href="/">
                 <img src="{% static 'access/img/smart-access-control-logo.png' %}" alt="smart-access-control-logo" width="200" height="60">
             </a>
-
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-
-            <div class="collapse navbar-collapse" id="mainNavbar">
-                <div class="ms-auto mt-3 mt-lg-0 d-grid d-lg-block">
-                    <a href="{% url 'settings' %}" class="btn btn-sm btn-outline-dark w-100 w-lg-auto">
-                        <i class="bi bi-sliders2-vertical me-1"></i>
-                        Settings
-                    </a>
-                </div>
+            <div class="ms-auto">
+                <a href="{% url 'settings' %}" class="btn btn-sm btn-outline-dark">
+                    <i class="bi bi-sliders2-vertical me-1"></i>
+                    Settings
+                </a>
             </div>
         </div>
     </nav>
