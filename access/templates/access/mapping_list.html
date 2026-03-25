@@ -58,7 +58,7 @@
         </thead>
         <tbody>
         {% for u in users %}
-        <tr data-palladium-id="{{ u.account_user_id }}" data-full-name="{{ u.get_full_name }}">
+        <tr data-accounting-id="{{ u.account_user_id }}" data-full-name="{{ u.get_full_name }}">
             <td>{{ u.get_full_name }}</td>
             <td class="text-end pe-5 ps-0">{{ u.usd_balance }}</td>
             <td class="text-end pe-5 ps-0">{{ u.zwg_balance }}</td>
@@ -135,12 +135,12 @@
                     <td><span id="pendingfullName" class="text-dark"></span></td>
                 </tr>
                 <tr>
-                    <th class="col-5">Palladium User ID:</th>
-                    <td><span id="pendingPalladium" class="text-dark"></span></td>
+                    <th class="col-5">Accounting User ID:</th>
+                    <td><span id="pendingAccounting" class="text-dark"></span></td>
                 </tr>
-                <tr id="pendingMa300Row">
-                    <th class="col-5">Pending MA300 ID:</th>
-                    <td><span id="pendingMa300" class="text-primary fw-bold"></span></td>
+                <tr id="pendingAccessDeviceRow">
+                    <th class="col-5">Pending Access Device ID:</th>
+                    <td><span id="pendingAccessDevice" class="text-primary fw-bold"></span></td>
                 </tr>
             </table>
         </div>
@@ -156,8 +156,6 @@
 
 <!-- scripts -->
 
-{% block extra_scripts %}
 <script src="{% static 'access/js/app.js' %}"></script>
-{% endblock %}
 
 {% endblock %}
