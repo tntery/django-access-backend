@@ -9,6 +9,15 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // closed by default on page load
     updateDBModalState("closed");
+
+    // auto dismiss settings update alerts after 5 seconds
+    const alertElements = document.querySelectorAll('.alert');
+    alertElements.forEach(alertEl => {
+        setTimeout(() => {
+            const alert = bootstrap.Alert.getOrCreateInstance(alertEl);
+            alert.close();
+        }, 5000);
+    });
 });
 
 function showAlert(message, type = 'success', placement = 'body') {

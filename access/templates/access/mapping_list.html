@@ -14,142 +14,159 @@
     <div id="alert-container"></div>
 
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3 mt-5">
-        <div>
+
+        <div class="col-md-6">
             <h2 class="h4 mb-1">User Connections</h2>
-            <p class="mb-1">Manage your connection pairing between the access control system user and the corresponding accounting system user here.</p>
-            <small class="text-muted">Last updated: {{ last_updated|date:"Y-m-d H:i:s" }}</small>
+            <p class="mb-1">Manage your connection pairing between the access control system user and the corresponding
+                accounting system user here.</p>
         </div>
-        <div>
-            <button id="syncUsersBtn" type="button" class="btn btn-outline-primary" onclick="syncUsers()">
+        <div class="col-md-3 pe-3 mas-auto d-flex flex-column align-items-end">
+            <button id="syncUsersBtn" type="button" class="btn btn-sm btn-outline-dark mb-2 ms-auto"
+                onclick="syncUsers()">
+                <i class="bi bi-arrow-repeat me-1"></i>
                 Sync Users
-                <i class="bi bi-arrow-repeat ms-1"></i>
             </button>
+            <p><small class="text-muted">Last updated: {{ last_updated|date:"Y-m-d H:i:s" }}</small></p>
         </div>
     </div>
 
-    <form method="get" class="row g-3 mt-1 align-items-end">
-        <div class="col-md-4">
-            {{ mapping_filter.form.search.label_tag }}
-            {{ mapping_filter.form.search }}
-        </div>
-        <div class="col-md-3">
-            {{ mapping_filter.form.connection_status.label_tag }}
-            {{ mapping_filter.form.connection_status }}
-        </div>
-        <div class="col-md-3">
-            {{ mapping_filter.form.account_user_id.label_tag }}
-            {{ mapping_filter.form.account_user_id }}
-        </div>
-        <div class="col-md-2 d-flex gap-2">
-            <button type="submit" class="btn btn-primary w-100">Filter</button>
-            <a href="{% url 'account_mapping_list' %}" class="btn btn-outline-secondary w-100">Clear</a>
-        </div>
-    </form>
+    <div class="bg-light p-3 pb-4 rounded border mt-4">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                {{ mapping_filter.form.search.label_tag }}
+                {{ mapping_filter.form.search }}
+            </div>
+            <div class="col-md-3">
+                {{ mapping_filter.form.connection_status.label_tag }}
+                {{ mapping_filter.form.connection_status }}
+            </div>
+            <div class="col-md-3">
+                {{ mapping_filter.form.account_user_id.label_tag }}
+                {{ mapping_filter.form.account_user_id }}
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-dark w-100">Filter</button>
+                <a href="{% url 'account_mapping_list' %}" class="btn btn-sm btn-outline-dark w-100">Clear</a>
+            </div>
+        </form>
+    </div>
 
-    <table class="table table-striped mt-5 border-top">
-        <thead>
-        <tr>
-            <th>Full Name</th>
-            <th class="text-end pe-5 ps-0">USD Balance</th>
-            <th class="text-end pe-5 ps-0">ZWG Balance</th>
-            <th>Status</th>
-            <th>Action</th>
-        </tr>
-        </thead>
-        <tbody>
-        {% for u in users %}
-        <tr data-accounting-id="{{ u.account_user_id }}" data-full-name="{{ u.get_full_name }}">
-            <td>{{ u.get_full_name }}</td>
-            <td class="text-end pe-5 ps-0">{{ u.usd_balance }}</td>
-            <td class="text-end pe-5 ps-0">{{ u.zwg_balance }}</td>
-            <td>
-            {% if u.device_access_id %}
-                <span class="badge bg-success">Connected</span>
-            {% else %}
-                <span class="badge bg-danger">Not Connected</span>
-            {% endif %}
-            <!-- Pending badge if modal open and TempMapping exists -->
-            <span id="pendingBadge-{{ u.account_user_id }}" class="badge bg-warning d-none">Pending Connection</span>
-            </td>
-            <td>
-            {% if u.device_access_id %}
-                <button class="btn btn-sm btn-outline-danger" onclick="openUnmapModal(this)">
-                    Disconnect
-                    <i class="bi bi-x-circle ms-1"></i>
-                </button>
-            {% else %}
-                <button class="btn btn-sm btn-primary" onclick="openMappingModal(this)">
-                    Connect
-                    <i class="bi bi-plug ms-1"></i>
-                </button>
-            {% endif %}
-            </td>
-        </tr>
-        {% empty %}
-        <tr>
-            <td colspan="5" class="text-center">No users found.</td>
-        </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <section class="table-responsive">
+        <table class="table table-responsive  table-striped mt-4 border-top">
+            <thead>
+                <tr>
+                    <th>Full Name</th>
+                    <th class="text-end pe-5 ps-0">USD Balance</th>
+                    <th class="text-end pe-5 ps-0">ZWG Balance</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users %}
+                <tr data-accounting-id="{{ u.account_user_id }}" data-full-name="{{ u.get_full_name }}">
+                    <td>{{ u.get_full_name }}</td>
+                    <td class="text-end pe-5 ps-0">{{ u.usd_balance }}</td>
+                    <td class="text-end pe-5 ps-0">{{ u.zwg_balance }}</td>
+                    <td>
+                        {% if u.device_access_id %}
+                        <span class="badge bg-success">Connected</span>
+                        {% else %}
+                        <span class="badge bg-danger">Not Connected</span>
+                        {% endif %}
+                        <!-- Pending badge if modal open and TempMapping exists -->
+                        <span id="pendingBadge-{{ u.account_user_id }}" class="badge bg-warning d-none">Pending
+                            Connection</span>
+                    </td>
+                    <td>
+                        {% if u.device_access_id %}
+                        <button class="btn btn-sm btn-outline-danger" onclick="openUnmapModal(this)">
+                            Disconnect
+                            <i class="bi bi-x-circle ms-1"></i>
+                        </button>
+                        {% else %}
+                        <button class="btn btn-sm btn-primary" onclick="openMappingModal(this)">
+                            Connect
+                            <i class="bi bi-plug ms-1"></i>
+                        </button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" class="text-center">No users found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
 
     {% if page_obj.paginator.num_pages > 1 %}
-    <nav aria-label="User connections pages" class="mt-4">
-        <ul class="pagination justify-content-center">
+    <nav aria-label="User connections pages" class="mt-2">
+        <ul class="pagination pagination-sm flex-wrap justify-content-center justify-content-md-start gap-1 mapping-pagination">
             <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
-                <a class="page-link" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}" aria-label="Previous">
-                    Previous
+                <a class="page-link"
+                    href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}"
+                    aria-label="Previous">
+                    <i class="bi bi-chevron-left" aria-hidden="true"></i>
+                    <span class="d-none d-sm-inline ms-1">Previous</span>
                 </a>
             </li>
             {% for page_number in page_obj.paginator.page_range %}
+
             <li class="page-item {% if page_number == page_obj.number %}active{% endif %}">
-                <a class="page-link" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ page_number }}">{{ page_number }}</a>
+                <a class="page-link"
+                    href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ page_number }}">{{ page_number }}</a>
             </li>
             {% endfor %}
             <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
-                <a class="page-link" href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ page_obj.paginator.num_pages }}{% endif %}" aria-label="Next">
-                    Next
+                <a class="page-link"
+                    href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ page_obj.paginator.num_pages }}{% endif %}"
+                    aria-label="Next">
+                    <span class="d-none d-sm-inline me-1">Next</span>
+                    <i class="bi bi-chevron-right" aria-hidden="true"></i>
                 </a>
             </li>
         </ul>
     </nav>
     {% endif %}
-    </div>
+    
+</div>
 
-    <!-- Mapping Modal -->
-    <div class="modal fade" id="mappingModal" tabindex="-1" aria-hidden="true">
+<!-- Mapping Modal -->
+<div class="modal fade" id="mappingModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-        <div class="modal-header bg-warning">
-            <h5 class="modal-title" id="mappingModalTitle">Connection Pending</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="closeMappingModal()"></button>
-        </div>
-        <div class="modal-body">
-            <div id="modalAlert" class="alert alert-danger d-flex align-items-center d-none" role="alert">
-                <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                <div></div>
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title" id="mappingModalTitle">Connection Pending</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="closeMappingModal()"></button>
             </div>
-            <table class="table table-borderless mb-0">
-                <tr>
-                    <th class="col-5">Full Name:</th>
-                    <td><span id="pendingfullName" class="text-dark"></span></td>
-                </tr>
-                <tr>
-                    <th class="col-5">Accounting User ID:</th>
-                    <td><span id="pendingAccounting" class="text-dark"></span></td>
-                </tr>
-                <tr id="pendingAccessDeviceRow">
-                    <th class="col-5">Pending Access Device ID:</th>
-                    <td><span id="pendingAccessDevice" class="text-primary fw-bold"></span></td>
-                </tr>
-            </table>
-        </div>
-        <div class="modal-footer">
-            <button id="modalConfirmBtn" class="btn btn-success" onclick="confirmMapping()">
-                Confirm
-                <i class="bi bi-plugin ms-1"></i>
-            </button>
-        </div>
+            <div class="modal-body">
+                <div id="modalAlert" class="alert alert-danger d-flex align-items-center d-none" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <div></div>
+                </div>
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <th class="col-5">Full Name:</th>
+                        <td><span id="pendingfullName" class="text-dark"></span></td>
+                    </tr>
+                    <tr>
+                        <th class="col-5">Accounting User ID:</th>
+                        <td><span id="pendingAccounting" class="text-dark"></span></td>
+                    </tr>
+                    <tr id="pendingAccessDeviceRow">
+                        <th class="col-5">Pending Access Device ID:</th>
+                        <td><span id="pendingAccessDevice" class="text-primary fw-bold"></span></td>
+                    </tr>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button id="modalConfirmBtn" class="btn btn-success" onclick="confirmMapping()">
+                    Confirm
+                    <i class="bi bi-plugin ms-1"></i>
+                </button>
+            </div>
         </div>
     </div>
 </div>
