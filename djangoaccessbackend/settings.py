@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import environ
 from pathlib import Path
+from django.contrib.messages import constants as message_constants
 
 # Initialize environ
 env = environ.Env(
@@ -132,3 +133,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = '/static/'
+
+MESSAGE_TAGS = {
+    message_constants.ERROR: 'danger',
+}

@@ -10,7 +10,8 @@ from pathlib import Path
 from django.conf import settings
 from django.core.paginator import Paginator
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.contrib import messages
+from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from .filters import AccountMappingFilter
@@ -116,7 +117,8 @@ def settings_view(request):
         form = SettingForm(request.POST, instance=settings_obj)
         if form.is_valid():
             form.save()
-            return render(request, 'access/settings.html', {'form': form, 'message': 'Settings updated successfully!'})
+            messages.success(request, 'Settings updated successfully!')
+            return redirect('account_mapping_list')
     else:
         form = SettingForm(instance=settings_obj)
     

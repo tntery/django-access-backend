@@ -2,11 +2,14 @@ let selectedPalladiumId = null;
 let selectedfullName = null;
 let pollMappingIntervalId = null;
 let modalMode = 'map'; // 'map' or 'unmap'
+let mappingModalInstance = null;
 
-let mappingModalInstance = new bootstrap.Modal(document.getElementById('mappingModal'));
+document.addEventListener("DOMContentLoaded", function() {
+    mappingModalInstance = new bootstrap.Modal(document.getElementById('mappingModal'));
 
-// closed by default on page load
-updateDBModalState("closed");
+    // closed by default on page load
+    updateDBModalState("closed");
+});
 
 function showAlert(message, type = 'success', placement = 'body') {
 
