@@ -156,6 +156,71 @@ def get_accounting_balances(device_access_id, currency=None):
         return None
 
 
+def get_access_decision(device_access_id, mapping, settings):
+    """Return access decision based on the authorization flow setting and relevant balance thresholds if applicable"""
+    
+    authorization_flow = settings.authorization_flow
+
+    match authorization_flow:
+        case "grant_all":
+            print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+            return "GRANT"
+        case "reject_all":
+            print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+            return "REJECT"
+        case "check_usd_balance" | "check_zwg_balance":
+            
+            filter_currency = 'usd' if authorization_flow == "check_usd_balance" else 'zwg'
+
+            if getattr(mapping, f'{filter_currency}_balance') is not None and getattr(mapping, f'{filter_currency}_balance') >= getattr(settings, f'{filter_currency}_balance_threshold'):
+                # grant access if user meets balance threshold
+                print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                return "GRANT"
+            else:
+                # fetch latest balance from external system in case it has changed since last fetch and check again before rejecting access
+                current_balance = get_accounting_balances(mapping.device_access_id, currency=filter_currency.upper())
+
+                print(f"Access ID: {device_access_id}, Palladium ID: {mapping.device_access_id}, {filter_currency.upper()} balance: {current_balance}")  # Debug log
+
+                if current_balance is None:
+                    # if there was an error fetching balance data from the external system, default to granting access to avoid locking out users due to transient issues with the external system, but log the event for troubleshooting
+                    print("Error fetching balance data for device_access_id:", device_access_id, "Defaulting to GRANT access but check logs for troubleshooting.")  # Debug log
+                    return "GRANT"
+                elif current_balance >= getattr(settings, f'{filter_currency}_balance_threshold'):
+                    print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                    
+                    return "GRANT"
+                else:
+                    print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+                    return "REJECT"
+        case "check_usd_or_zwg_balance":
+            # check if user meets either balance threshold to grant access
+            if ((mapping.usd_balance is not None and mapping.usd_balance >= settings.usd_balance_threshold) or 
+                (mapping.zwg_balance is not None and mapping.zwg_balance >= settings.zwg_balance_threshold)):
+                print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                return "GRANT"
+            else:
+                # fetch latest balances from external system in case they have changed since last fetch and check again before rejecting access
+                current_balances = get_accounting_balances(mapping.device_access_id)
+
+                print(f"Access ID: {device_access_id}, Palladium ID: {mapping.device_access_id}, Current balances: {current_balances}")  # Debug log
+
+                if current_balances is None:
+                    # if there was an error fetching balance data from the external system, default to granting access to avoid locking out users due to transient issues with the external system, but log the event for troubleshooting
+                    print("Error fetching balance data for device_access_id:", device_access_id, "Defaulting to GRANT access but check logs for troubleshooting.")  # Debug log
+                    return "GRANT"
+                elif ((current_balances.get('usd_balance') is not None and current_balances.get('usd_balance') >= settings.usd_balance_threshold) or 
+                        (current_balances.get('zwg_balance') is not None and current_balances.get('zwg_balance') >= settings.zwg_balance_threshold)):
+                    print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                    return "GRANT"
+                else:
+                    print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+                    return "REJECT"
+        case _:
+            print("Invalid authorization flow setting. Defaulting to REJECT access for device_access_id:", device_access_id)  # Debug log
+            return "REJECT"
+
+
 @csrf_exempt
 def access_event_view(request):
     """Handle access event from access control device"""
@@ -179,91 +244,33 @@ def access_event_view(request):
             if modal_state and modal_state.state == "open":
                 # Insert/update PendingAccountMapping with latest device_access_id
                 PendingAccountMapping.objects.update_or_create(id=1, defaults={"device_access_id": device_access_id})
-                _log_access_event(device_access_id, 'reject', mapping)
                 return JsonResponse({"access": "REJECT"})  # always reject while mapping modal is open
 
             if not mapping:
                 print("No mapping found for device_access_id:", device_access_id)  # Debug log
-                _log_access_event(device_access_id, 'reject', mapping)
                 return JsonResponse({"access": "REJECT"})
             settings = Setting.get_solo()
 
             # continue with access decision logic based on the authorization flow setting and relevant balance thresholds if applicable
-
-            authorization_flow = settings.authorization_flow
-
-            match authorization_flow:
-                case "grant_all":
-                    print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
-                    _log_access_event(device_access_id, 'grant', mapping)
-                    return JsonResponse({"access": "GRANT"})
-                case "reject_all":
-                    print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
-                    _log_access_event(device_access_id, 'reject', mapping)
-                    return JsonResponse({"access": "REJECT"})
-                case "check_usd_balance" | "check_zwg_balance":
-                    
-                    filter_currency = 'usd' if authorization_flow == "check_usd_balance" else 'zwg'
-
-                    if getattr(mapping, f'{filter_currency}_balance') is not None and getattr(mapping, f'{filter_currency}_balance') >= getattr(settings, f'{filter_currency}_balance_threshold'):
-                        # grant access if user meets balance threshold
-                        print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
-                        _log_access_event(device_access_id, 'grant', mapping)
-                        return JsonResponse({"access": "GRANT"})
-                    else:
-                        # fetch latest balance from external system in case it has changed since last fetch and check again before rejecting access
-                        current_balance = get_accounting_balances(mapping.device_access_id, currency=filter_currency.upper())
-
-                        print(f"Access ID: {device_access_id}, Palladium ID: {mapping.device_access_id}, {filter_currency.upper()} balance: {current_balance}")  # Debug log
-
-                        if current_balance is None:
-                            # if there was an error fetching balance data from the external system, default to granting access to avoid locking out users due to transient issues with the external system, but log the event for troubleshooting
-                            print("Error fetching balance data for device_access_id:", device_access_id, "Defaulting to GRANT access but check logs for troubleshooting.")  # Debug log
-                            _log_access_event(device_access_id, 'grant', mapping)
-                            return JsonResponse({"access": "GRANT"})
-                        elif current_balance >= getattr(settings, f'{filter_currency}_balance_threshold'):
-                            print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
-                            
-                            _log_access_event(device_access_id, 'grant', mapping)
-                            return JsonResponse({"access": "GRANT"})
-                        else:
-                            print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
-                            _log_access_event(device_access_id, 'reject', mapping)
-                            return JsonResponse({"access": "REJECT"})
-                case "check_usd_or_zwg_balance":
-                    # check if user meets either balance threshold to grant access
-                    if ((mapping.usd_balance is not None and mapping.usd_balance >= settings.usd_balance_threshold) or 
-                        (mapping.zwg_balance is not None and mapping.zwg_balance >= settings.zwg_balance_threshold)):
-                        print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
-                        _log_access_event(device_access_id, 'grant', mapping)
-                        return JsonResponse({"access": "GRANT"})
-                    else:
-                        # fetch latest balances from external system in case they have changed since last fetch and check again before rejecting access
-                        current_balances = get_accounting_balances(mapping.device_access_id)
-
-                        print(f"Access ID: {device_access_id}, Palladium ID: {mapping.device_access_id}, Current balances: {current_balances}")  # Debug log
-
-                        if current_balances is None:
-                            # if there was an error fetching balance data from the external system, default to granting access to avoid locking out users due to transient issues with the external system, but log the event for troubleshooting
-                            print("Error fetching balance data for device_access_id:", device_access_id, "Defaulting to GRANT access but check logs for troubleshooting.")  # Debug log
-                            _log_access_event(device_access_id, 'grant', mapping)
-                            return JsonResponse({"access": "GRANT"})
-                        elif ((current_balances.get('usd_balance') is not None and current_balances.get('usd_balance') >= settings.usd_balance_threshold) or 
-                              (current_balances.get('zwg_balance') is not None and current_balances.get('zwg_balance') >= settings.zwg_balance_threshold)):
-                            print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
-                            _log_access_event(device_access_id, 'grant', mapping)
-                            return JsonResponse({"access": "GRANT"})
-                        else:
-                            print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
-                            _log_access_event(device_access_id, 'reject', mapping)
-                            return JsonResponse({"access": "REJECT"})
-                case _:
-                    print("Invalid authorization flow setting. Defaulting to REJECT access for device_access_id:", device_access_id)  # Debug log
-                    _log_access_event(device_access_id, 'reject', mapping)
-                    return JsonResponse({"access": "REJECT"})
+            access_decision = get_access_decision(device_access_id, mapping, settings)
+            _log_access_event(device_access_id, access_decision.lower(), mapping)
+            return JsonResponse({"access": access_decision}, status=HTTPStatus.OK)
                                 
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        
+    elif request.method == "GET":
+        # return list of all mappings against access decision for local device caching purposes at the access control device level to allow it to make access decisions even if there are transient issues with the connection to the server or external accounting system, but in a real implementation we would want to ensure that the access control device is regularly syncing with the server to have the most up-to-date mapping and user data for accurate access decisions based on the latest user data from the external system
+        mappings = AccountMapping.objects.filter(device_access_id__isnull=False)
+        print(f"Returning {mappings.count()} mappings for GET request to access_event_view")  # Debug log to verify number of mappings being returned
+        mapping_list = []
+        for mapping in mappings:
+            access_decision = get_access_decision(mapping.device_access_id, mapping, Setting.get_solo())
+            mapping_list.append({
+                "device_access_id": mapping.device_access_id,
+                "access": access_decision
+            })
+        return JsonResponse({"mappings": mapping_list}, status=HTTPStatus.OK)
 
     else:
         return JsonResponse({"error": "Invalid request method"}, status=405)
