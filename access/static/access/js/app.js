@@ -5,13 +5,14 @@ let modalMode = 'map'; // 'map' or 'unmap'
 let mappingModalInstance = null;
 
 document.addEventListener("DOMContentLoaded", function() {
+
     mappingModalInstance = new bootstrap.Modal(document.getElementById('mappingModal'));
 
     // closed by default on page load
     updateDBModalState("closed");
 
     // auto dismiss settings update alerts after 5 seconds
-    const alertElements = document.querySelectorAll('.alert');
+    const alertElements = document.querySelectorAll('.alert:not(#modalAlert)'); // exclude modal alerts
     alertElements.forEach(alertEl => {
         setTimeout(() => {
             const alert = bootstrap.Alert.getOrCreateInstance(alertEl);
@@ -198,7 +199,7 @@ function confirmMapping() {
 
     // Create mapping flow
     const device_access_id = document.getElementById("pendingAccessDevice").innerText;
-    if(device_access_id === "Waiting for biometric/card input..."){
+    if(device_access_id === "Waiting for biometric/card input..." || device_access_id === "") {
         showAlert("Please scan fingerprint/card to get the device access ID before confirming.", 'danger', 'modal');
         return;
     }
