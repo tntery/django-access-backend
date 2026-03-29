@@ -1,5 +1,6 @@
 {% extends "access/includes/base.html" %}
 {% load static %}
+{% load humanize %}
 
 {% block title %}User Connections | Smart Access Control{% endblock %}
 
@@ -29,11 +30,11 @@
             <table class="text-muted">
                 <tr>
                     <td>Last synced:</td>
-                    <td>{{ last_updated|date:"Y-m-d H:i:s" }}</td>
+                    <td>{{ last_updated|naturaltime }}</td>
                 </tr>
                 <tr>
                     <td>Last access event:</td>
-                    <td>{{ last_access_event_timestamp|date:"Y-m-d H:i:s" }}</td>
+                    <td>{{ last_access_event_timestamp|naturaltime }}</td>
                 </tr>
                 <tr>
                     <td class="me-2">Last access decision:</td>
