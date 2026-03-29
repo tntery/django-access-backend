@@ -342,10 +342,10 @@ def handle_delete_mapping(request, filter_name=None):
 
 
 def fetch_external_users():
-    """API endpoint to fetch users from the external accounting system and update the AccountMapping table with any new users or updated user info (e.g. balance)"""
+    """An endpoint helper function to fetch users from the external accounting system and update the AccountMapping table with any new users or updated user info (e.g. balance)"""
         
     try:
-        r = requests.get(f'{EXTERNAL_ACCOUNTING_URL}/api/UserData/get-data', timeout=15)
+        r = requests.get(f'{EXTERNAL_ACCOUNTING_URL}/api/GateEntryBalances/grouped-balances', timeout=15)
         r.raise_for_status()
         users = r.json()
         print(f"Fetched {len(users)} users from external accounting system:", users)  # Debug log to verify response from external system 
@@ -357,15 +357,20 @@ def fetch_external_users():
                     account_user_id=str(user.get('cardId')), # Assuming cardId is the unique identifier for the user in the external system 
                     first_name=user.get('firstName', ''),
                     last_name=user.get('lastName', ''),
-                    usd_balance=user.get('usdBalance', -9999999.00),
-                    zwg_balance=user.get('zwdBalance', -9999999.00),
+                    narration=user.get('custDesc', ''),
+                    usd_balance=user.get('balanceUSD', -9999999.00),
+                    zwg_balance=user.get('balanceZWG', -9999999.00),
                     last_updated_at=timezone.now(),
                 ) for user in users
             ],
             update_conflicts=True,
             unique_fields=['account_user_id',],
-            update_fields=['first_name', 'last_name', 'usd_balance', 'zwg_balance', 'last_updated_at']
+            update_fields=['first_name', 'last_name', 'narration', 'usd_balance', 'zwg_balance', 'last_updated_at']
         )
+
+        # handle deletions of users from the external system and remove them from the AccountMapping table or mark them as inactive
+        external_user_ids = {str(user.get('cardId')) for user in users}
+        AccountMapping.objects.exclude(account_user_id__in=external_user_ids).delete()
 
         return JsonResponse({"status": "external users updated"}, status=HTTPStatus.OK)
     except HTTPError as e:

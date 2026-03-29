@@ -13,6 +13,7 @@ class AccountMapping(models.Model):
     account_user_id = models.CharField(max_length=50, unique=True, help_text="Unique identifier from accounting system")
     first_name = models.CharField(max_length=50, null=True, blank=True, help_text="User's first name")
     last_name = models.CharField(max_length=50, null=True, blank=True, help_text="User's last name")
+    narration = models.CharField(max_length=50, null=True, blank=True, help_text="User's description/narration from accounting system")
     usd_balance = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="User's balance in USD")
     zwg_balance = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="User's balance in ZWG")
     accounting_system = models.CharField(max_length=50, choices=ACCOUNTING_SYSTEM_CHOICES, default="palladium", help_text="Accounting system name")
@@ -24,7 +25,9 @@ class AccountMapping(models.Model):
 
     def get_full_name(self):
         """Helper method to return full name of the user"""
-        if self.first_name and self.last_name:
+        if self.narration:
+            return self.narration
+        elif self.first_name and self.last_name:
             return f"{self.first_name} {self.last_name}"
         elif self.first_name:
             return self.first_name
