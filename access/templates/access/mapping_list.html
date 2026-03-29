@@ -13,43 +13,83 @@
 
     <div id="alert-container"></div>
 
-    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3 mt-5">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3 mt-5 pe-3">
 
-        <div class="col-md-6">
-            <h2 class="h4 mb-1">User Connections</h2>
-            <p class="mb-1">Manage your connection pairing between the access control system user and the corresponding
+        <div class="col-md-7">
+            <h6 class="">
+                <i class="bi bi-person-circle me-1"></i>
+                Belgravia Sports Club
+            </h6>
+            <h2 class="h4 mb-1 text-uppercase">User Connections</h2>
+            <p class="mb-1 mt-2">Manage your connection pairing between the access control system user and the corresponding
                 accounting system user here.</p>
         </div>
-        <div class="col-md-3 pe-3 mas-auto d-flex flex-column align-items-end">
-            <button id="syncUsersBtn" type="button" class="btn btn-sm btn-outline-dark mb-2 ms-auto"
-                onclick="syncUsers()">
-                <i class="bi bi-arrow-repeat me-1"></i>
-                Sync Users
-            </button>
-            <p><small class="text-muted">Last updated: {{ last_updated|date:"Y-m-d H:i:s" }}</small></p>
+        <div class="col-md-5 border rounded p-3 bg-light me-0">
+            <h6>Quick stats</h6>
+            <table class="text-muted">
+                <tr>
+                    <td>Last synced:</td>
+                    <td>{{ last_updated|date:"Y-m-d H:i:s" }}</td>
+                </tr>
+                <tr>
+                    <td>Last access event:</td>
+                    <td>{{ last_access_event_timestamp|date:"Y-m-d H:i:s" }}</td>
+                </tr>
+                <tr>
+                    <td class="me-2">Last access decision:</td>
+                    <td>{{ last_access_decision|title|default:"-" }}</td>
+                </tr>
+            </table>
         </div>
+        
     </div>
 
-    <div class="bg-light p-3 pb-4 rounded border mt-4">
-        <form method="get" class="row g-3 align-items-end">
-            <div class="col-md-4">
-                {{ mapping_filter.form.search.label_tag }}
-                {{ mapping_filter.form.search }}
+    <details class="px-3 py-2 mt-3 bg-light border rounded">
+        <summary class="text-dark" style="cursor: pointer;">
+            <span class="ms-1 fw-bold">Quick actions</span>
+            <i class="bi bi-tools text-muted ms-2"></i>
+        </summary>
+        <div class="border rounded px-3 py-2 my-3">
+            <h6>
+                Sync Users
+                <i class="bi bi-arrow-repeat ms-1"></i>
+            </h6>
+            <p class="mt-2 mb-1">Syncing users will fetch the latest user data from the external accounting system and update the user list and their balances here. It will also remove any users that have been deleted from the external system. This is useful to do after making changes to users in the external system or if you want to ensure you have the latest user data.</p>
+            <p class="text-muted mt-0 py-0"><span class="fw-bold">Note:</span> This operation may take a few moments depending on the number of users in the external system.</p>
+            <button id="syncUsersBtn" type="button" class="btn btn-sm btn-primary mb-2 ms-auto"
+                onclick="syncUsers()">
+                <i class="bi bi-arrow-repeat me-1"></i>
+                SYNC NOW
+            </button>
+        </div>
+        <div class="border rounded px-3 py-2 my-3 mb-4">
+            <h6>
+                Filter & Search
+                <i class="bi bi-filter ms-1"></i>
+            </h6>
+            <p class="text-muted mt-2">Use the filter and search options to quickly find specific users or groups of users based on their connection status, accounting user ID, or by searching their full name. This is especially helpful when managing a large number of users.</p>
+            <div class="bg-light p-3 pb-4 rounded border mt-4">
+                <form method="get" class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        {{ mapping_filter.form.search.label_tag }}
+                        {{ mapping_filter.form.search }}
+                    </div>
+                    <div class="col-md-3">
+                        {{ mapping_filter.form.connection_status.label_tag }}
+                        {{ mapping_filter.form.connection_status }}
+                    </div>
+                    <div class="col-md-3">
+                        {{ mapping_filter.form.account_user_id.label_tag }}
+                        {{ mapping_filter.form.account_user_id }}
+                    </div>
+                    <div class="col-md-2 d-flex gap-2">
+                        <button type="submit" class="btn btn-sm btn-primary w-100">Filter</button>
+                        <a href="{% url 'account_mapping_list' %}" class="btn btn-sm btn-outline-dark w-100">Clear</a>
+                    </div>
+                </form>
             </div>
-            <div class="col-md-3">
-                {{ mapping_filter.form.connection_status.label_tag }}
-                {{ mapping_filter.form.connection_status }}
-            </div>
-            <div class="col-md-3">
-                {{ mapping_filter.form.account_user_id.label_tag }}
-                {{ mapping_filter.form.account_user_id }}
-            </div>
-            <div class="col-md-2 d-flex gap-2">
-                <button type="submit" class="btn btn-sm btn-dark w-100">Filter</button>
-                <a href="{% url 'account_mapping_list' %}" class="btn btn-sm btn-outline-dark w-100">Clear</a>
-            </div>
-        </form>
-    </div>
+        </div>
+    </details>
 
     <section class="table-responsive">
         <table class="table table-responsive  table-striped mt-4 border-top">

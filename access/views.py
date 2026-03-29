@@ -95,7 +95,11 @@ def account_mapping_list_view(request):
 
     last_updated = AccountMapping.objects.order_by('-last_updated_at').first()
     print(f"Last updated time: {last_updated.last_updated_at if last_updated else '-'}")  # Debug log to verify mapping
-    # print(f"User list for mapping view: {user_list}")  # Debug log to verify user list
+    last_access_event = AccessEventLog.objects.order_by('-event_timestamp').first()
+    last_access_event_timestamp = last_access_event.event_timestamp if last_access_event else None
+    print(f"Last access event time: {last_access_event_timestamp if last_access_event_timestamp else '-'}")  # Debug log to verify access events
+    last_access_decision = last_access_event.access_status if last_access_event else '-'
+    print(f"Last access decision: {last_access_decision}")  # Debug log to
     return render(
         request,
         "access/mapping_list.html",
@@ -105,6 +109,8 @@ def account_mapping_list_view(request):
             "mapping_filter": mapping_filter,
             "query_string": query_string,
             "last_updated": last_updated.last_updated_at if last_updated else "-",
+            "last_access_event_timestamp": last_access_event_timestamp if last_access_event_timestamp else "-",
+            "last_access_decision": last_access_decision,
         },
     )
 

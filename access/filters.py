@@ -27,6 +27,7 @@ class AccountMappingFilter(django_filters.FilterSet):
             Q(account_user_id__icontains=value)
             | Q(first_name__icontains=value)
             | Q(last_name__icontains=value)
+            | Q(narration__icontains=value)
             | Q(device_access_id__icontains=value)
         )
 
