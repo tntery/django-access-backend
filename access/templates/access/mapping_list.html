@@ -1,5 +1,6 @@
 {% extends "access/includes/base.html" %}
 {% load static %}
+{% load humanize %}
 
 {% block title %}User Connections | Smart Access Control{% endblock %}
 
@@ -13,93 +14,209 @@
 
     <div id="alert-container"></div>
 
-    <h2 class="h4 mt-5">User Connections</h2>
-    <p>Manage your connection pairing between the access control system user and the corresponding accounting system user here.</p>
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3 mt-5 pe-3">
 
-    <table class="table table-striped mt-5 border-top">
-        <thead>
-        <tr>
-            <th>Full Name</th>
-            <th class="text-end pe-5 ps-0">Balance ($)</th>
-            <th>Status</th>
-            <th>Action</th>
-        </tr>
-        </thead>
-        <tbody>
-        {% for u in users %}
-        <tr data-palladium-id="{{ u.account_user_id }}" data-full-name="{{ u.full_name }}">
-            <td>{{ u.full_name }}</td>
-            <td class="text-end pe-5 ps-0">{{ u.balance }}</td>
-            <td>
-            {% if u.connected %}
-                <span class="badge bg-success">Connected</span>
-            {% else %}
-                <span class="badge bg-danger">Not Connected</span>
-            {% endif %}
-            <!-- Pending badge if modal open and TempMapping exists -->
-            <span id="pendingBadge-{{ u.account_user_id }}" class="badge bg-warning d-none">Pending Connection</span>
-            </td>
-            <td>
-            {% if u.connected %}
-                <button class="btn btn-sm btn-outline-danger" onclick="openUnmapModal(this)">
-                    Disconnect
-                    <i class="bi bi-x-circle ms-1"></i>
-                </button>
-            {% else %}
-                <button class="btn btn-sm btn-primary" onclick="openMappingModal(this)">
-                    Connect
-                    <i class="bi bi-plug ms-1"></i>
-                </button>
-            {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-    </div>
-
-    <!-- Mapping Modal -->
-    <div class="modal fade" id="mappingModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-        <div class="modal-header bg-warning">
-            <h5 class="modal-title" id="mappingModalTitle">Connection Pending</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="closeMappingModal()"></button>
+        <div class="col-md-7">
+            <h6 class="">
+                <i class="bi bi-person-circle me-1"></i>
+                Belgravia Sports Club
+            </h6>
+            <h2 class="h4 mb-1 text-uppercase">User Connections</h2>
+            <p class="mb-1 mt-2">Manage your connection pairing between the access control system user and the corresponding
+                accounting system user here.</p>
         </div>
-        <div class="modal-body">
-            <div id="modalAlert" class="alert alert-danger d-flex align-items-center d-none" role="alert">
-                <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                <div></div>
-            </div>
-            <table class="table table-borderless mb-0">
+        <div class="col-md-5 border rounded p-3 bg-light me-0">
+            <h6>Quick stats</h6>
+            <table class="text-muted">
                 <tr>
-                    <th class="col-5">Full Name:</th>
-                    <td><span id="pendingfullName" class="text-dark"></span></td>
+                    <td>Last synced:</td>
+                    <td>{{ last_updated|naturaltime }}</td>
                 </tr>
                 <tr>
-                    <th class="col-5">Palladium User ID:</th>
-                    <td><span id="pendingPalladium" class="text-dark"></span></td>
+                    <td>Last access event:</td>
+                    <td>{{ last_access_event_timestamp|naturaltime }}</td>
                 </tr>
-                <tr id="pendingMa300Row">
-                    <th class="col-5">Pending MA300 ID:</th>
-                    <td><span id="pendingMa300" class="text-primary fw-bold"></span></td>
+                <tr>
+                    <td class="me-2">Last access decision:</td>
+                    <td>{{ last_access_decision|title|default:"-" }}</td>
                 </tr>
             </table>
         </div>
-        <div class="modal-footer">
-            <button id="modalConfirmBtn" class="btn btn-success" onclick="confirmMapping()">
-                Confirm
-                <i class="bi bi-plugin ms-1"></i>
+        
+    </div>
+
+    <details class="px-3 py-2 mt-3 bg-light border rounded">
+        <summary class="text-dark" style="cursor: pointer;">
+            <span class="ms-1 fw-bold">Quick actions</span>
+            <i class="bi bi-tools text-muted ms-2"></i>
+        </summary>
+        <div class="border rounded px-3 py-2 my-3">
+            <h6>
+                Sync Users
+                <i class="bi bi-arrow-repeat ms-1"></i>
+            </h6>
+            <p class="mt-2 mb-1">Syncing users will fetch the latest user data from the external accounting system and update the user list and their balances here. It will also remove any users that have been deleted from the external system. This is useful to do after making changes to users in the external system or if you want to ensure you have the latest user data.</p>
+            <p class="text-muted mt-0 py-0"><span class="fw-bold">Note:</span> This operation may take a few moments depending on the number of users in the external system.</p>
+            <button id="syncUsersBtn" type="button" class="btn btn-sm btn-primary mb-2 ms-auto"
+                onclick="syncUsers()">
+                <i class="bi bi-arrow-repeat me-1"></i>
+                SYNC NOW
             </button>
         </div>
+        <div class="border rounded px-3 py-2 my-3 mb-4">
+            <h6>
+                Filter & Search
+                <i class="bi bi-filter ms-1"></i>
+            </h6>
+            <p class="text-muted mt-2">Use the filter and search options to quickly find specific users or groups of users based on their connection status, accounting user ID, or by searching their full name. This is especially helpful when managing a large number of users.</p>
+            <div class="bg-light p-3 pb-4 rounded border mt-4">
+                <form method="get" class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        {{ mapping_filter.form.search.label_tag }}
+                        {{ mapping_filter.form.search }}
+                    </div>
+                    <div class="col-md-3">
+                        {{ mapping_filter.form.connection_status.label_tag }}
+                        {{ mapping_filter.form.connection_status }}
+                    </div>
+                    <div class="col-md-3">
+                        {{ mapping_filter.form.account_user_id.label_tag }}
+                        {{ mapping_filter.form.account_user_id }}
+                    </div>
+                    <div class="col-md-2 d-flex gap-2">
+                        <button type="submit" class="btn btn-sm btn-primary w-100">Filter</button>
+                        <a href="{% url 'account_mapping_list' %}" class="btn btn-sm btn-outline-dark w-100">Clear</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </details>
+
+    <section class="table-responsive">
+        <table class="table table-responsive  table-striped mt-4 border-top">
+            <thead>
+                <tr>
+                    <th>Full Name</th>
+                    <th class="text-end pe-5 ps-0">USD Balance</th>
+                    <th class="text-end pe-5 ps-0">ZWG Balance</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users %}
+                <tr data-accounting-id="{{ u.account_user_id }}" data-full-name="{{ u.get_full_name }}">
+                    <td>{{ u.get_full_name }}</td>
+                    <td class="text-end pe-5 ps-0">{{ u.usd_balance }}</td>
+                    <td class="text-end pe-5 ps-0">{{ u.zwg_balance }}</td>
+                    <td>
+                        {% if u.device_access_id %}
+                        <span class="badge bg-success">Connected</span>
+                        {% else %}
+                        <span class="badge bg-danger">Not Connected</span>
+                        {% endif %}
+                        <!-- Pending badge if modal open and TempMapping exists -->
+                        <span id="pendingBadge-{{ u.account_user_id }}" class="badge bg-warning d-none">Pending
+                            Connection</span>
+                    </td>
+                    <td>
+                        {% if u.device_access_id %}
+                        <button class="btn btn-sm btn-outline-danger" onclick="openUnmapModal(this)">
+                            Disconnect
+                            <i class="bi bi-x-circle ms-1"></i>
+                        </button>
+                        {% else %}
+                        <button class="btn btn-sm btn-primary" onclick="openMappingModal(this)">
+                            Connect
+                            <i class="bi bi-plug ms-1"></i>
+                        </button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" class="text-center">No users found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    {% if page_obj.paginator.num_pages > 1 %}
+    <nav aria-label="User connections pages" class="mt-2">
+        <ul class="pagination pagination-sm flex-wrap justify-content-center justify-content-md-start gap-1 mapping-pagination">
+            <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
+                <a class="page-link"
+                    href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}"
+                    aria-label="Previous">
+                    <i class="bi bi-chevron-left" aria-hidden="true"></i>
+                    <span class="d-none d-sm-inline ms-1">Previous</span>
+                </a>
+            </li>
+            {% for page_number in page_obj.paginator.page_range %}
+
+            <li class="page-item {% if page_number == page_obj.number %}active{% endif %}">
+                <a class="page-link"
+                    href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={{ page_number }}">{{ page_number }}</a>
+            </li>
+            {% endfor %}
+            <li class="page-item {% if not page_obj.has_next %}disabled{% endif %}">
+                <a class="page-link"
+                    href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ page_obj.paginator.num_pages }}{% endif %}"
+                    aria-label="Next">
+                    <span class="d-none d-sm-inline me-1">Next</span>
+                    <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                </a>
+            </li>
+        </ul>
+    </nav>
+    {% endif %}
+    
+</div>
+
+<!-- Mapping Modal -->
+<div class="modal fade" id="mappingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title" id="mappingModalTitle">Connection Pending</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="closeMappingModal()"></button>
+            </div>
+            <div class="modal-body">
+                <div id="modalAlert" class="alert alert-danger d-flex align-items-center d-none" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <div></div>
+                </div>
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <th class="col-5">Full Name:</th>
+                        <td><span id="pendingfullName" class="text-dark"></span></td>
+                    </tr>
+                    <tr>
+                        <th class="col-5">Accounting User ID:</th>
+                        <td><span id="pendingAccounting" class="text-dark"></span></td>
+                    </tr>
+                    <tr id="pendingAccessDeviceRow">
+                        <th class="col-5">Pending Access Device ID:</th>
+                        <td><span id="pendingAccessDevice" class="text-primary fw-bold"></span></td>
+                    </tr>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button id="modalConfirmBtn" class="btn btn-success" onclick="confirmMapping()">
+                    Confirm
+                    <i class="bi bi-plugin ms-1"></i>
+                </button>
+            </div>
         </div>
     </div>
 </div>
 
 <!-- scripts -->
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 
+{% endblock %}
+
+{% block extra_scripts %}
 <script src="{% static 'access/js/app.js' %}"></script>
-
 {% endblock %}

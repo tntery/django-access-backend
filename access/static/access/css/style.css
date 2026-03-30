@@ -5,3 +5,15 @@
     0%, 75% { opacity: 1; }
     76%, 100% { opacity: 0; }
 }
+
+.mapping-pagination .page-link {
+    min-width: 2.1rem;
+    text-align: center;
+}
+
+@media (max-width: 576px) {
+    .mapping-pagination .page-link {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+}

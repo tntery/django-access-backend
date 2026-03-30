@@ -1,24 +1,36 @@
 import json
 import sqlite3
+import environ
+import requests
+from requests.exceptions import RequestException, HTTPError
+from http import HTTPStatus
 from contextlib import closing
 from pathlib import Path
 
 from django.conf import settings
+from django.core.paginator import Paginator
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.contrib import messages
+from django.shortcuts import redirect, render
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from .filters import AccountMappingFilter
 from .models import AccessEventLog, AccountMapping, PendingAccountMapping, MappingModalState, Setting
 from .forms import SettingForm
 
 EXTERNAL_ACCOUNTING_DB_NAME = 'external_accounting.sqlite3'
+ACCOUNT_MAPPING_PAGE_SIZE = 25
+
+env = environ.Env()
+environ.Env.read_env()
+EXTERNAL_ACCOUNTING_URL = env('ACCOUNTING_API_USERLIST_URL')
 
 
 def _log_access_event(device_access_id, access_status, mapping=None):
     """Persist access decisions for auditing and troubleshooting."""
     AccessEventLog.objects.create(
         device_access_id=str(device_access_id) if device_access_id is not None else '',
-        account_user_id=mapping.account_user_id if mapping else None,
-        accounting_system=mapping.accounting_system if mapping else 'palladium',
+        user=mapping if mapping else None,
         access_status=access_status,
     )
 
@@ -65,6 +77,44 @@ def get_test_users():
     return users
 
 
+def account_mapping_list_view(request):
+    """Return a list of all mappings of the access control user to the different external system accounts for display in the admin interface"""
+
+    # User data is read from the mock external accounting SQLite DB and merged with current mapping state.
+    # TODO : Add filtering and pagination as needed for real implementation when pulling from actual database with potentially large number of users.
+
+    user_list = AccountMapping.objects.all().order_by('-last_name', '-first_name')
+    mapping_filter = AccountMappingFilter(request.GET, queryset=user_list)
+
+    paginator = Paginator(mapping_filter.qs, ACCOUNT_MAPPING_PAGE_SIZE)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    query_params = request.GET.copy()
+    query_params.pop('page', None)
+    query_string = query_params.urlencode()
+
+    last_updated = AccountMapping.objects.order_by('-last_updated_at').first()
+    print(f"Last updated time: {last_updated.last_updated_at if last_updated else '-'}")  # Debug log to verify mapping
+    last_access_event = AccessEventLog.objects.order_by('-event_timestamp').first()
+    last_access_event_timestamp = last_access_event.event_timestamp if last_access_event else None
+    print(f"Last access event time: {last_access_event_timestamp if last_access_event_timestamp else '-'}")  # Debug log to verify access events
+    last_access_decision = last_access_event.access_status if last_access_event else '-'
+    print(f"Last access decision: {last_access_decision}")  # Debug log to
+    return render(
+        request,
+        "access/mapping_list.html",
+        {
+            "users": page_obj,
+            "page_obj": page_obj,
+            "mapping_filter": mapping_filter,
+            "query_string": query_string,
+            "last_updated": last_updated.last_updated_at if last_updated else "-",
+            "last_access_event_timestamp": last_access_event_timestamp if last_access_event_timestamp else "-",
+            "last_access_decision": last_access_decision,
+        },
+    )
+
+
 def settings_view(request):
     """View to display and update settings"""
     settings_obj = Setting.get_solo()
@@ -73,20 +123,108 @@ def settings_view(request):
         form = SettingForm(request.POST, instance=settings_obj)
         if form.is_valid():
             form.save()
-            return render(request, 'access/settings.html', {'form': form, 'message': 'Settings updated successfully!'})
+            messages.success(request, 'Settings updated successfully!')
+            return redirect('account_mapping_list')
     else:
         form = SettingForm(instance=settings_obj)
     
     return render(request, 'access/settings.html', {'form': form})
 
 
-def get_palladium_balance(device_access_id):
-    """Return a balance from the external accounting data for the mapped device_access_id."""
-    # Pull current users from the external accounting DB and locate the mapped user balance.
-    for user in get_test_users():
-        if str(user['device_access_id']) == str(device_access_id):
-            print(f"Found user for device_access_id {device_access_id}: {user['full_name']} with balance {user['balance']}")  # Debug log
-            return user['balance']
+def get_accounting_balances(device_access_id, currency=None):
+    """Return usd and/or zwg balances from the external accounting data for the mapped device_access_id."""
+    # get user id from mapping and then get balance for that user from the external accounting system
+    mapping = AccountMapping.objects.filter(device_access_id=device_access_id).first()
+    if not mapping:
+        return None
+    try:
+        # r = requests.get(f'{EXTERNAL_ACCOUNTING_URL}/api/UserData/get-data-by-cardId/{mapping.account_user_id}', timeout=10)
+        # r.raise_for_status()
+        # user_data = r.json()
+
+        # get from database for testing purposes since we are not currently updating balances in the AccountMapping table with real-time data from the external system in this demo implementation, but in a real implementation we would want to ensure we are fetching the latest balance data from the external system at the time of the access event to make accurate access decisions based on the most up-to-date user data
+        user_data = AccountMapping.objects.filter(device_access_id=device_access_id).first()
+        print(f"Fetched user data for device_access_id {device_access_id} from external accounting system:", user_data)  # Debug log to verify response from external system
+        if currency == 'USD':
+            return user_data.get('usdBalance') if type(user_data) is dict else user_data.usd_balance
+        elif currency == 'ZWG':
+            return user_data.get('zwdBalance') if type(user_data) is dict else user_data.zwg_balance
+        else:
+            return {
+                'usd_balance': user_data.get('usdBalance') if type(user_data) is dict else user_data.usd_balance,
+                'zwg_balance': user_data.get('zwdBalance') if type(user_data) is dict else user_data.zwg_balance,
+            }
+    except HTTPError as e:
+        print(f"HTTP error occurred while fetching user data for device_access_id {device_access_id} from external accounting system:", e)  # Debug log for HTTP errors
+        return None
+    except requests.RequestException as e:
+        print(f"Error fetching user data for device_access_id {device_access_id} from external accounting system:", e)
+        return None
+
+
+def get_access_decision(device_access_id, mapping, settings):
+    """Return access decision based on the authorization flow setting and relevant balance thresholds if applicable"""
+    
+    authorization_flow = settings.authorization_flow
+
+    match authorization_flow:
+        case "grant_all":
+            print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+            return "GRANT"
+        case "reject_all":
+            print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+            return "REJECT"
+        case "check_usd_balance" | "check_zwg_balance":
+            
+            filter_currency = 'usd' if authorization_flow == "check_usd_balance" else 'zwg'
+
+            if getattr(mapping, f'{filter_currency}_balance') is not None and getattr(mapping, f'{filter_currency}_balance') >= getattr(settings, f'{filter_currency}_balance_threshold'):
+                # grant access if user meets balance threshold
+                print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                return "GRANT"
+            else:
+                # fetch latest balance from external system in case it has changed since last fetch and check again before rejecting access
+                current_balance = get_accounting_balances(mapping.device_access_id, currency=filter_currency.upper())
+
+                print(f"Access ID: {device_access_id}, Palladium ID: {mapping.device_access_id}, {filter_currency.upper()} balance: {current_balance}")  # Debug log
+
+                if current_balance is None:
+                    # if there was an error fetching balance data from the external system, default to granting access to avoid locking out users due to transient issues with the external system, but log the event for troubleshooting
+                    print("Error fetching balance data for device_access_id:", device_access_id, "Defaulting to GRANT access but check logs for troubleshooting.")  # Debug log
+                    return "GRANT"
+                elif current_balance >= getattr(settings, f'{filter_currency}_balance_threshold'):
+                    print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                    
+                    return "GRANT"
+                else:
+                    print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+                    return "REJECT"
+        case "check_usd_or_zwg_balance":
+            # check if user meets either balance threshold to grant access
+            if ((mapping.usd_balance is not None and mapping.usd_balance >= settings.usd_balance_threshold) or 
+                (mapping.zwg_balance is not None and mapping.zwg_balance >= settings.zwg_balance_threshold)):
+                print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                return "GRANT"
+            else:
+                # fetch latest balances from external system in case they have changed since last fetch and check again before rejecting access
+                current_balances = get_accounting_balances(mapping.device_access_id)
+
+                print(f"Access ID: {device_access_id}, Palladium ID: {mapping.device_access_id}, Current balances: {current_balances}")  # Debug log
+
+                if current_balances is None:
+                    # if there was an error fetching balance data from the external system, default to granting access to avoid locking out users due to transient issues with the external system, but log the event for troubleshooting
+                    print("Error fetching balance data for device_access_id:", device_access_id, "Defaulting to GRANT access but check logs for troubleshooting.")  # Debug log
+                    return "GRANT"
+                elif ((current_balances.get('usd_balance') is not None and current_balances.get('usd_balance') >= settings.usd_balance_threshold) or 
+                        (current_balances.get('zwg_balance') is not None and current_balances.get('zwg_balance') >= settings.zwg_balance_threshold)):
+                    print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                    return "GRANT"
+                else:
+                    print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+                    return "REJECT"
+        case _:
+            print("Invalid authorization flow setting. Defaulting to REJECT access for device_access_id:", device_access_id)  # Debug log
+            return "REJECT"
 
 
 @csrf_exempt
@@ -112,80 +250,71 @@ def access_event_view(request):
             if modal_state and modal_state.state == "open":
                 # Insert/update PendingAccountMapping with latest device_access_id
                 PendingAccountMapping.objects.update_or_create(id=1, defaults={"device_access_id": device_access_id})
-                _log_access_event(device_access_id, 'reject', mapping)
                 return JsonResponse({"access": "REJECT"})  # always reject while mapping modal is open
 
+            if not mapping:
+                print("No mapping found for device_access_id:", device_access_id)  # Debug log
+                return JsonResponse({"access": "REJECT"})
             settings = Setting.get_solo()
 
-            match settings.authorization_flow:
-                case "grant_all":
-                    print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
-                    _log_access_event(device_access_id, 'grant', mapping)
-                    return JsonResponse({"access": "GRANT"})
-                case "reject_all":
-                    print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
-                    _log_access_event(device_access_id, 'reject', mapping)
-                    return JsonResponse({"access": "REJECT"})
-                case _:
-            
-                    # Normal flow: check mapping
-                    if mapping:
-                        balance = get_palladium_balance(mapping.device_access_id)
-                        print(f"Access ID: {device_access_id}, Palladium ID: {mapping.device_access_id}, Balance: {balance}")  # Debug log
-                        if balance is not None and balance >= settings.balance_threshold:
-                            print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
-                            _log_access_event(device_access_id, 'grant', mapping)
-                            return JsonResponse({"access": "GRANT"})
-                        
-                    print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
-                    _log_access_event(device_access_id, 'reject', mapping)
-                    return JsonResponse({"access": "REJECT"})
-            
+            # continue with access decision logic based on the authorization flow setting and relevant balance thresholds if applicable
+            access_decision = get_access_decision(device_access_id, mapping, settings)
+            _log_access_event(device_access_id, access_decision.lower(), mapping)
+            return JsonResponse({"access": access_decision}, status=HTTPStatus.OK)
+                                
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        
+    elif request.method == "GET":
+        # return list of all mappings against access decision for local device caching purposes at the access control device level to allow it to make access decisions even if there are transient issues with the connection to the server or external accounting system, but in a real implementation we would want to ensure that the access control device is regularly syncing with the server to have the most up-to-date mapping and user data for accurate access decisions based on the latest user data from the external system
+        mappings = AccountMapping.objects.filter(device_access_id__isnull=False)
+        print(f"Returning {mappings.count()} mappings for GET request to access_event_view")  # Debug log to verify number of mappings being returned
+        mapping_list = []
+        for mapping in mappings:
+            access_decision = get_access_decision(mapping.device_access_id, mapping, Setting.get_solo())
+            mapping_list.append({
+                "device_access_id": mapping.device_access_id,
+                "access": access_decision
+            })
+        return JsonResponse({"mappings": mapping_list}, status=HTTPStatus.OK)
 
     else:
         return JsonResponse({"error": "Invalid request method"}, status=405)
 
 
-def account_mapping_list_view(request):
-    """Return a list of all mappings of the access control user to the different external system accounts for display in the admin interface"""
-
-    # User data is read from the mock external accounting SQLite DB and merged with current mapping state.
-    # TODO : Add filtering and pagination as needed for real implementation when pulling from actual database with potentially large number of users.
-    return render(request, "access/mapping_list.html", {"users": get_test_users()})
-
-
 @csrf_exempt
-def api_account_mapping_view(request, account_user_id=None):
-    """API endpoint to return list of mappings based on account_user_id filter (e.g. pending)"""
+def api_account_mapping_view(request, filter_name=None):
+    """API endpoint to return list of mappings based on filter_name (e.g. pending, update) or to create/update/delete mapping based on request method and filter_name (e.g. account_user_id for delete)"""
     match request.method:
         case "GET":
-            return handle_get_pending_mapping(request, account_user_id)
+            return handle_get_mappings(request, filter_name)
         case "POST":
-            return handle_create_mapping(request)
+            return handle_create_mapping(request, filter_name)
         case "DELETE":
-            return handle_delete_mapping(request, account_user_id)
+            return handle_delete_mapping(request, filter_name)
         case _:
-            return JsonResponse({"error": "Invalid request method"}, status=405)
+            return JsonResponse({"error": "Invalid request method"}, status=HTTPStatus.METHOD_NOT_ALLOWED)
 
 
-def handle_get_pending_mapping(request, account_user_id=None):
-    """Handle GET request to return pending mapping or all mappings based on account_user_id filter"""
-    if account_user_id is None:
-        # return message that account_user_id filter is required for GET requests
-        return JsonResponse({"error": "account_user_id filter is required for GET request"}, status=400)
+def handle_get_mappings(request, filter_name=None):
+    """Handle GET request to return pending mapping or all mappings based on filter_name"""
+    if filter_name is None:
+        # return message that filter_name is required for GET requests
+        return JsonResponse({"error": "filter_name is required for GET request"}, status=HTTPStatus.BAD_REQUEST)
     else:
-        if account_user_id == "pending":
+        if filter_name == "pending":
             temp = PendingAccountMapping.objects.first()
-            return JsonResponse({"device_access_id": temp.device_access_id if temp else None})
+            return JsonResponse({"device_access_id": temp.device_access_id if temp else None}, status=HTTPStatus.OK)
         else:
             # return message that only pending filter is supported for GET requests
-            return JsonResponse({"error": "Invalid filter for GET request. Only 'pending' is supported."}, status=400)
+            return JsonResponse({"error": "Invalid filter for GET request. Only 'pending' is supported."}, status=HTTPStatus.BAD_REQUEST)
 
 
-def handle_create_mapping(request):
+def handle_create_mapping(request, filter_name=None):
     """Handle POST request to create/update mapping between access control user and accounting system user"""
+    if filter_name == "update":
+        return fetch_external_users()  # Trigger fetch from external system to update user data before updating mapping
+    
     try:
         data = json.loads(request.body)
         print("JSON data:", data)  # Debug log
@@ -195,27 +324,67 @@ def handle_create_mapping(request):
         print("Extracted data:", device_access_id, account_user_id)  # Debug log
 
         if AccountMapping.objects.filter(device_access_id=device_access_id).exists():
-            return JsonResponse({"error": "This device's Access ID is already mapped to another account"}, status=400)
+            return JsonResponse({"error": "This device's Access ID is already mapped to another account"}, status=HTTPStatus.BAD_REQUEST)
 
         AccountMapping.objects.update_or_create( account_user_id=account_user_id, defaults={"device_access_id": device_access_id})
         PendingAccountMapping.objects.all().delete()
-        return JsonResponse({"status": "created"}, status=201)
+        return JsonResponse({"status": "created"}, status=HTTPStatus.CREATED)
     except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        return JsonResponse({'error': 'Invalid JSON'}, status=HTTPStatus.BAD_REQUEST)
 
 
-def handle_delete_mapping(request, account_user_id=None):
+def handle_delete_mapping(request, filter_name=None):
     """Handle DELETE request to remove mapping between access control user and accounting system user (set device_access_id to null for the given account_user_id)"""
-    if account_user_id is None:
-        return JsonResponse({"error": "account_user_id filter is required for DELETE request"}, status=400) 
+    if filter_name is None:
+        return JsonResponse({"error": "account_user_id is required for DELETE request"}, status=HTTPStatus.BAD_REQUEST) 
 
-    mapping = AccountMapping.objects.filter(account_user_id=account_user_id).first()
+    mapping = AccountMapping.objects.filter(account_user_id=filter_name).first()
     if not mapping:
-        return JsonResponse({"error": "No mapping found for that account user."}, status=404)
+        return JsonResponse({"error": "No mapping found for that account user."}, status=HTTPStatus.NOT_FOUND)
 
     mapping.device_access_id = None
     mapping.save()
-    return JsonResponse({"status": "unmapped"}, status=200)
+    return JsonResponse({"status": "unmapped"}, status=HTTPStatus.NO_CONTENT)
+
+
+def fetch_external_users():
+    """An endpoint helper function to fetch users from the external accounting system and update the AccountMapping table with any new users or updated user info (e.g. balance)"""
+        
+    try:
+        r = requests.get(f'{EXTERNAL_ACCOUNTING_URL}', timeout=15)
+        r.raise_for_status()
+        users = r.json()
+        print(f"Fetched {len(users)} users from external accounting system:", users)  # Debug log to verify response from external system 
+
+        # update database with any new users from the external system that are not already in the AccountMapping table
+        AccountMapping.objects.bulk_create(
+            [
+                AccountMapping(
+                    account_user_id=str(user.get('cardId')), # Assuming cardId is the unique identifier for the user in the external system 
+                    first_name=user.get('firstName', ''),
+                    last_name=user.get('lastName', ''),
+                    narration=user.get('custDesc', ''),
+                    usd_balance=user.get('balanceUSD', -9999999.00),
+                    zwg_balance=user.get('balanceZWG', -9999999.00),
+                    last_updated_at=timezone.now(),
+                ) for user in users
+            ],
+            update_conflicts=True,
+            unique_fields=['account_user_id',],
+            update_fields=['first_name', 'last_name', 'narration', 'usd_balance', 'zwg_balance', 'last_updated_at']
+        )
+
+        # handle deletions of users from the external system and remove them from the AccountMapping table or mark them as inactive
+        external_user_ids = {str(user.get('cardId')) for user in users}
+        AccountMapping.objects.exclude(account_user_id__in=external_user_ids).delete()
+
+        return JsonResponse({"status": "external users updated"}, status=HTTPStatus.OK)
+    except HTTPError as e:
+        print("HTTP error occurred while fetching users from external accounting system:", e)  # Debug log for HTTP errors
+        return JsonResponse({"error": "Failed to fetch users from external accounting system due to HTTP error"}, status=HTTPStatus.BAD_GATEWAY)
+    except RequestException as e:
+        print("Error fetching users from external accounting system:", e)  # Debug log for error handling
+        return JsonResponse({"error": "Failed to fetch users from external accounting system"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     
 @csrf_exempt
@@ -232,9 +401,9 @@ def set_modal_state_view(request):
             if state == "closed":
                 PendingAccountMapping.objects.all().delete()
 
-            return JsonResponse({"status": "created"} , status=201)
+            return JsonResponse({"status": "created"} , status=HTTPStatus.CREATED)
         
         except json.JSONDecodeError:
-            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+            return JsonResponse({'error': 'Invalid JSON'}, status=HTTPStatus.BAD_REQUEST)
     else:
-        return JsonResponse({"error": "Invalid request method"}, status=405)
+        return JsonResponse({"error": "Invalid request method"}, status=HTTPStatus.METHOD_NOT_ALLOWED)

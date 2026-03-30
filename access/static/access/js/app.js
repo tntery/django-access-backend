@@ -1,12 +1,25 @@
-let selectedPalladiumId = null;
+let selectedAccountingId = null;
 let selectedfullName = null;
 let pollMappingIntervalId = null;
 let modalMode = 'map'; // 'map' or 'unmap'
+let mappingModalInstance = null;
 
-let mappingModalInstance = new bootstrap.Modal(document.getElementById('mappingModal'));
+document.addEventListener("DOMContentLoaded", function() {
 
-// closed by default on page load
-updateDBModalState("closed");
+    mappingModalInstance = new bootstrap.Modal(document.getElementById('mappingModal'));
+
+    // closed by default on page load
+    updateDBModalState("closed");
+
+    // auto dismiss settings update alerts after 5 seconds
+    const alertElements = document.querySelectorAll('.alert:not(#modalAlert)'); // exclude modal alerts
+    alertElements.forEach(alertEl => {
+        setTimeout(() => {
+            const alert = bootstrap.Alert.getOrCreateInstance(alertEl);
+            alert.close();
+        }, 5000);
+    });
+});
 
 function showAlert(message, type = 'success', placement = 'body') {
 
@@ -62,10 +75,10 @@ function openMappingModal(button) {
     modalMode = 'map';
 
     const row = button.closest("tr");
-    selectedPalladiumId = row.dataset.palladiumId;
+    selectedAccountingId = row.dataset.accountingId;
     selectedfullName = row.dataset.fullName;
 
-    document.getElementById("pendingPalladium").innerText = selectedPalladiumId;
+    document.getElementById("pendingAccounting").innerText = selectedAccountingId;
     document.getElementById("pendingfullName").innerText = selectedfullName;
 
     let mappingModalTitle = document.getElementById('mappingModalTitle');
@@ -74,21 +87,21 @@ function openMappingModal(button) {
     let MappingModalHeader = document.querySelector('.modal-header');
     MappingModalHeader.classList.remove('bg-warning');
     MappingModalHeader.classList.add('bg-success');
-    document.getElementById('pendingMa300Row').classList.remove('d-none');
+    document.getElementById('pendingAccessDeviceRow').classList.remove('d-none');
     const confirmBtn = document.getElementById('modalConfirmBtn');
     confirmBtn.innerHTML = 'Confirm <i class="bi bi-plugin ms-1"></i>';
     confirmBtn.classList.remove('btn-danger');
     confirmBtn.classList.add('btn-success');
 
     // Show pending badge
-    let pendingBage = document.getElementById("pendingBadge-" + selectedPalladiumId);
+    let pendingBage = document.getElementById("pendingBadge-" + selectedAccountingId);
     pendingBage.innerText = "Pending Connection...";
     pendingBage.classList.remove("d-none");
 
     updateDBModalState("open");
 
     // Start blinking the waiting text
-    document.getElementById("pendingMa300").classList.add("blink");
+    document.getElementById("pendingAccessDevice").classList.add("blink");
 
     // Start polling for TempMapping updates
     pollTempMapping();
@@ -100,13 +113,13 @@ function openUnmapModal(button) {
     modalMode = 'unmap';
 
     const row = button.closest("tr");
-    selectedPalladiumId = row.dataset.palladiumId;
+    selectedAccountingId = row.dataset.accountingId;
     selectedfullName = row.dataset.fullName;
 
-    document.getElementById("pendingPalladium").innerText = selectedPalladiumId;
+    document.getElementById("pendingAccounting").innerText = selectedAccountingId;
     document.getElementById("pendingfullName").innerText = selectedfullName;
-    document.getElementById("pendingMa300").innerText = "---";
-    document.getElementById("pendingMa300").classList.remove("blink");
+    document.getElementById("pendingAccessDevice").innerText = "---";
+    document.getElementById("pendingAccessDevice").classList.remove("blink");
 
     let mappingModalTitle = document.getElementById('mappingModalTitle');
     mappingModalTitle.innerText = 'Confirm Disconnection';
@@ -115,14 +128,14 @@ function openUnmapModal(button) {
     let MappingModalHeader = document.querySelector('.modal-header');
     MappingModalHeader.classList.remove('bg-success');
     MappingModalHeader.classList.add('bg-warning');
-    document.getElementById('pendingMa300Row').classList.add('d-none');
+    document.getElementById('pendingAccessDeviceRow').classList.add('d-none');
     const confirmBtn = document.getElementById('modalConfirmBtn');
     confirmBtn.innerHTML = 'Disconnect <i class="bi bi-x-circle ms-1"></i>';
     confirmBtn.classList.remove('btn-success');
     confirmBtn.classList.add('btn-danger');
 
     // Show pending badge
-    let pendingBage = document.getElementById("pendingBadge-" + selectedPalladiumId);
+    let pendingBage = document.getElementById("pendingBadge-" + selectedAccountingId);
     pendingBage.innerText = "Pending Disconnection...";
     pendingBage.classList.remove("d-none");
 
@@ -137,8 +150,8 @@ function closeMappingModal() {
     updateDBModalState("closed");
     
     // Hide pending badge
-    if(selectedPalladiumId) {
-        document.getElementById("pendingBadge-" + selectedPalladiumId).classList.add("d-none");
+    if(selectedAccountingId) {
+        document.getElementById("pendingBadge-" + selectedAccountingId).classList.add("d-none");
     }
 
     // Stop polling
@@ -148,6 +161,11 @@ function closeMappingModal() {
     let container = document.getElementById('modalAlert');
     container.querySelector('div').innerText = ""; 
     container.classList.add('d-none');
+
+    // clear pending info
+    document.getElementById("pendingAccounting").innerText = "";
+    document.getElementById("pendingfullName").innerText = "";
+    document.getElementById("pendingAccessDevice").innerText = "";
 }
 
 function pollTempMapping() {
@@ -159,7 +177,7 @@ function pollTempMapping() {
             }   
             return res.json();
         }).then(data => {
-            const ma300Element = document.getElementById("pendingMa300");
+            const ma300Element = document.getElementById("pendingAccessDevice");
             const newId = data.device_access_id || "Waiting for biometric/card input...";
             ma300Element.innerText = newId;
             
@@ -180,8 +198,8 @@ function confirmMapping() {
     }
 
     // Create mapping flow
-    const device_access_id = document.getElementById("pendingMa300").innerText;
-    if(device_access_id === "Waiting for biometric/card input..."){
+    const device_access_id = document.getElementById("pendingAccessDevice").innerText;
+    if(device_access_id === "Waiting for biometric/card input..." || device_access_id === "") {
         showAlert("Please scan fingerprint/card to get the device access ID before confirming.", 'danger', 'modal');
         return;
     }
@@ -189,7 +207,7 @@ function confirmMapping() {
     fetch("api/mappings", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ device_access_id, account_user_id: selectedPalladiumId })
+        body: JSON.stringify({ device_access_id, account_user_id: selectedAccountingId })
     }).then(res => {
         if (!res.ok) {
             return res.json().then(errData => {
@@ -206,17 +224,43 @@ function confirmMapping() {
     });
 }
 
+function syncUsers() {
+    const syncButton = document.getElementById('syncUsersBtn');
+    if (syncButton) {
+        syncButton.disabled = true;
+        syncButton.innerHTML = 'Syncing... <i class="bi bi-arrow-repeat ms-1"></i>';
+    }
+
+    fetch('api/mappings/update', {
+        method: 'POST',
+    }).then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.error || 'Unable to sync users.');
+        }
+        return data;
+    }).then(() => {
+        showAlert('Users synced successfully!', 'success');
+        setTimeout(() => { location.reload(); }, 5000);
+    }).catch((err) => {
+        showAlert(`Error syncing users: ${err.message}`, 'danger');
+    }).finally(() => {
+        if (syncButton) {
+            syncButton.disabled = false;
+            syncButton.innerHTML = 'Sync Users <i class="bi bi-arrow-repeat ms-1"></i>';
+        }
+    });
+}
+
 function removeMapping() {
-    fetch("api/mappings/" + selectedPalladiumId, {
+    fetch("api/mappings/" + selectedAccountingId, {
         method: "DELETE",
-        // headers: {"Content-Type": "application/json"},
-        // body: JSON.stringify({ account_user_id: selectedPalladiumId })
     }).then(async res => {
         if (!res.ok) {
             const errData = await res.json();
             throw new Error(errData.error || "Unknown error");
         }
-        return res.json();
+        return true;
     }).then(data => {
         closeMappingModal();
         showAlert("User disconnected successfully.", 'success');
