@@ -7,8 +7,9 @@ from pathlib import Path
 from django.core.management import call_command
 from django.test import TestCase
 
+
 from .models import AccessEventLog, AccountMapping, MappingModalState, PendingAccountMapping, Setting
-from .views import EXTERNAL_ACCOUNTING_DB_NAME, get_test_users
+from .views import ACCOUNT_MAPPING_PAGE_SIZE, EXTERNAL_ACCOUNTING_DB_NAME, get_test_users
 
 
 class ExternalAccountingDbMixin:
@@ -68,6 +69,65 @@ class GetTestUsersTests(TestCase, ExternalAccountingDbMixin):
 		self.assertTrue(users[0]['connected'])
 		self.assertIsNone(users[1]['device_access_id'])
 		self.assertFalse(users[1]['connected'])
+
+
+class AccountMappingListViewTests(TestCase):
+	def test_account_mapping_list_view_shows_sync_button_and_last_updated(self):
+		AccountMapping.objects.create(
+			account_user_id='900',
+			first_name='Sync',
+			last_name='User',
+			accounting_system='palladium',
+		)
+
+		response = self.client.get('/')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'Sync Users')
+		self.assertContains(response, 'Last updated:')
+
+	def test_account_mapping_list_view_paginates_results(self):
+		for index in range(ACCOUNT_MAPPING_PAGE_SIZE + 2):
+			AccountMapping.objects.create(
+				account_user_id=f'{index:03d}',
+				first_name='User',
+				last_name=f'{index:02d}',
+				accounting_system='palladium',
+			)
+
+		response = self.client.get('/?page=2')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.context['page_obj'].number, 2)
+		self.assertTrue(response.context['page_obj'].has_previous())
+		self.assertFalse(response.context['page_obj'].has_next())
+		self.assertEqual(len(response.context['users']), 2)
+		self.assertEqual(
+			[mapping.account_user_id for mapping in response.context['users']],
+			['001', '000'],
+		)
+
+	def test_account_mapping_list_view_filters_connected_users(self):
+		AccountMapping.objects.create(
+			account_user_id='100',
+			first_name='Connected',
+			last_name='User',
+			device_access_id='A-100',
+			accounting_system='palladium',
+		)
+		AccountMapping.objects.create(
+			account_user_id='101',
+			first_name='Not',
+			last_name='Connected',
+			device_access_id=None,
+			accounting_system='palladium',
+		)
+
+		response = self.client.get('/?connection_status=connected')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(len(response.context['users']), 1)
+		self.assertEqual(response.context['users'][0].account_user_id, '100')
 
 
 class AccessEventViewTests(TestCase, ExternalAccountingDbMixin):
