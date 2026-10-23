@@ -30,5 +30,7 @@ class SettingForm(ModelForm):
                     raise ValidationError('ZWG balance threshold cannot be empty when using "Check ZWG Balance" flow.')
 
             case 'check_usd_or_zwg_balance':
-                if usd_balance_threshold is None and zwg_balance_threshold is None:
-                    raise ValidationError('At least one of USD or ZWG balance thresholds must be set when using "Check USD/ZWG Balance" flow.')
+                # both threshholds are required.
+                if usd_balance_threshold is None or zwg_balance_threshold is None:
+                    raise ValidationError('Both USD and ZWG balance thresholds must be set when using "Check USD/ZWG Balance" flow.')
+        

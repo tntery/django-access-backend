@@ -4,6 +4,7 @@ import tempfile
 from contextlib import closing
 from pathlib import Path
 
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
 
@@ -328,3 +329,51 @@ class LoadInitialDataCommandTests(TestCase):
 				self.assertEqual(mapping.device_access_id, '175750')
 				self.assertIn(mapping.accounting_system, {'palladium', 'quickbooks', 'xero'})
 				self.assertEqual(MappingModalState.objects.get(id=1).state, 'closed')
+
+
+class TemplateViewAuthenticationTests(TestCase):
+	def setUp(self):
+		self.user = get_user_model().objects.create_user(
+			username='admin_user',
+			password='StrongTestPass123!',
+		)
+
+	def test_mapping_list_requires_authentication(self):
+		response = self.client.get('/')
+
+		self.assertEqual(response.status_code, 302)
+		self.assertIn('/login/?next=/', response.url)
+
+	def test_settings_requires_authentication(self):
+		response = self.client.get('/settings/')
+
+		self.assertEqual(response.status_code, 302)
+		self.assertIn('/login/?next=/settings/', response.url)
+
+	def test_authenticated_user_can_access_template_views(self):
+		self.client.force_login(self.user)
+
+		list_response = self.client.get('/')
+		settings_response = self.client.get('/settings/')
+
+		self.assertEqual(list_response.status_code, 200)
+		self.assertEqual(settings_response.status_code, 200)
+		self.assertContains(list_response, 'admin_user')
+
+	def test_successful_login_shows_welcome_message(self):
+		response = self.client.post(
+			'/login/',
+			data={'username': 'admin_user', 'password': 'StrongTestPass123!'},
+			follow=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'Welcome back, admin_user.')
+
+	def test_logout_shows_info_message(self):
+		self.client.force_login(self.user)
+
+		response = self.client.post('/logout/', follow=True)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'You have been logged out.')

@@ -2,6 +2,7 @@ import json
 import sqlite3
 import environ
 import requests
+import logging
 from requests.exceptions import RequestException, HTTPError
 from http import HTTPStatus
 from contextlib import closing
@@ -10,29 +11,56 @@ from pathlib import Path
 from django.conf import settings
 from django.core.paginator import Paginator
 from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib import messages
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from .filters import AccountMappingFilter
-from .models import AccessEventLog, AccountMapping, PendingAccountMapping, MappingModalState, Setting
+from .models import AccessControlDevice, AccessDeviceSyncLog, AccessEventLog, TamperEventLog, AccessId, AccountMapping, PendingAccountMapping, MappingModalState, Setting, SystemMetadata
 from .forms import SettingForm
 
 EXTERNAL_ACCOUNTING_DB_NAME = 'external_accounting.sqlite3'
 ACCOUNT_MAPPING_PAGE_SIZE = 25
+logger = logging.getLogger(__name__)
 
 env = environ.Env()
 environ.Env.read_env()
 EXTERNAL_ACCOUNTING_URL = env('ACCOUNTING_API_USERLIST_URL')
+STAFF_USER_IDS = env.list('STAFF_USER_IDS', default=[])
+DUMP_DATABASE_SECRET_KEY = env('DUMP_DATABASE_SECRET_KEY', default='replace_thesis_with_a_sekure_kiy')
+
+# access_decisions_list = SystemMetadata.objects.first().access_decision_cache if SystemMetadata.objects.first() and SystemMetadata.objects.first().access_decision_cache else []
+access_decisions_list = []
+
+# print(f"Initial access_decisions_list loaded from cache: {access_decisions_list}")  # Debug log to verify initial loading of access decisions cache
+
+class AccessLoginView(LoginView):
+    template_name = 'access/login.html'
+    redirect_authenticated_user = True
+
+    def form_valid(self, form):
+        messages.success(self.request, f"Welcome back, {form.get_user().get_username()}.")
+        return super().form_valid(form)
 
 
-def _log_access_event(device_access_id, access_status, mapping=None):
+class AccessLogoutView(LogoutView):
+    def post(self, request, *args, **kwargs):
+        messages.info(request, 'You have been logged out.')
+        return super().post(request, *args, **kwargs)
+
+
+def _log_access_event(device_access_id, access_status, mapping=None, access_type="normal", access_control_device=None):
     """Persist access decisions for auditing and troubleshooting."""
     AccessEventLog.objects.create(
         device_access_id=str(device_access_id) if device_access_id is not None else '',
         user=mapping if mapping else None,
         access_status=access_status,
+        access_type=access_type,
+        access_control_device=access_control_device,
     )
+
 
 def get_test_users():
     """Fetch users from the mock external accounting DB and merge mapping state."""
@@ -56,7 +84,7 @@ def get_test_users():
 
     mapping_lookup = {
         mapping.account_user_id: mapping.device_access_id
-        for mapping in AccountMapping.objects.all()
+        for mapping in AccountMapping.objects.prefetch_related('access_ids').all()
     }
 
     users = []
@@ -77,6 +105,7 @@ def get_test_users():
     return users
 
 
+@login_required
 def account_mapping_list_view(request):
     """Return a list of all mappings of the access control user to the different external system accounts for display in the admin interface"""
 
@@ -86,7 +115,7 @@ def account_mapping_list_view(request):
     user_list = AccountMapping.objects.all().order_by('-last_name', '-first_name')
     mapping_filter = AccountMappingFilter(request.GET, queryset=user_list)
 
-    paginator = Paginator(mapping_filter.qs, ACCOUNT_MAPPING_PAGE_SIZE)
+    paginator = Paginator(mapping_filter.qs.order_by('narration', '-last_name', '-first_name'), ACCOUNT_MAPPING_PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get('page'))
 
     query_params = request.GET.copy()
@@ -94,27 +123,34 @@ def account_mapping_list_view(request):
     query_string = query_params.urlencode()
 
     last_updated = AccountMapping.objects.order_by('-last_updated_at').first()
-    print(f"Last updated time: {last_updated.last_updated_at if last_updated else '-'}")  # Debug log to verify mapping
+    system_metadata = SystemMetadata.objects.first()    
+    mapping_last_updated_at = system_metadata.last_successful_mapping_update_at
+    access_device_last_synced_at = system_metadata.last_device_sync_at
+
     last_access_event = AccessEventLog.objects.order_by('-event_timestamp').first()
     last_access_event_timestamp = last_access_event.event_timestamp if last_access_event else None
-    print(f"Last access event time: {last_access_event_timestamp if last_access_event_timestamp else '-'}")  # Debug log to verify access events
     last_access_decision = last_access_event.access_status if last_access_event else '-'
-    print(f"Last access decision: {last_access_decision}")  # Debug log to
     return render(
         request,
         "access/mapping_list.html",
         {
             "users": page_obj,
+            "total_users": mapping_filter.qs.count(),
+            "connected_users": mapping_filter.qs.filter(access_ids__access_id__isnull=False).exclude(access_ids__access_id='').count(),
+            "connected_access_ids": AccessId.objects.filter(mapping__in=mapping_filter.qs, access_id__isnull=False).exclude(access_id='').count(),
+            "not_connected_users": mapping_filter.qs.filter(access_ids__access_id__isnull=True).count(),
             "page_obj": page_obj,
             "mapping_filter": mapping_filter,
             "query_string": query_string,
-            "last_updated": last_updated.last_updated_at if last_updated else "-",
+            "mapping_last_updated": mapping_last_updated_at if mapping_last_updated_at else "-",
+            "access_device_last_synced_at": access_device_last_synced_at if access_device_last_synced_at else "-",
             "last_access_event_timestamp": last_access_event_timestamp if last_access_event_timestamp else "-",
             "last_access_decision": last_access_decision,
         },
     )
 
 
+@login_required
 def settings_view(request):
     """View to display and update settings"""
     settings_obj = Setting.get_solo()
@@ -124,6 +160,13 @@ def settings_view(request):
         if form.is_valid():
             form.save()
             messages.success(request, 'Settings updated successfully!')
+
+            # refresh the access decisions cache after settings update to ensure that any changes to the authorization flow or balance thresholds are reflected in the access decisions being provided to the access control devices at the time of the access events based on the latest settings
+            
+            global access_decisions_list
+            access_decisions_list = get_access_decisions_list()
+            print("Access decisions cache refreshed after settings update.")  # Debug log to verify access decisions cache refresh after settings update
+
             return redirect('account_mapping_list')
     else:
         form = SettingForm(instance=settings_obj)
@@ -134,7 +177,8 @@ def settings_view(request):
 def get_accounting_balances(device_access_id, currency=None):
     """Return usd and/or zwg balances from the external accounting data for the mapped device_access_id."""
     # get user id from mapping and then get balance for that user from the external accounting system
-    mapping = AccountMapping.objects.filter(device_access_id=device_access_id).first()
+    access_id_entry = AccessId.objects.select_related('mapping').filter(access_id=device_access_id).first()
+    mapping = access_id_entry.mapping if access_id_entry else None
     if not mapping:
         return None
     try:
@@ -143,8 +187,13 @@ def get_accounting_balances(device_access_id, currency=None):
         # user_data = r.json()
 
         # get from database for testing purposes since we are not currently updating balances in the AccountMapping table with real-time data from the external system in this demo implementation, but in a real implementation we would want to ensure we are fetching the latest balance data from the external system at the time of the access event to make accurate access decisions based on the most up-to-date user data
-        user_data = AccountMapping.objects.filter(device_access_id=device_access_id).first()
+
+        user_data = mapping
         print(f"Fetched user data for device_access_id {device_access_id} from external accounting system:", user_data)  # Debug log to verify response from external system
+
+        # log last successful balance fetch time for visibility in admin interface and troubleshooting purposes
+        SystemMetadata.objects.update_or_create(single_instance_id="singleton", defaults={"last_successful_balance_fetch_at": timezone.now()})
+
         if currency == 'USD':
             return user_data.get('usdBalance') if type(user_data) is dict else user_data.usd_balance
         elif currency == 'ZWG':
@@ -154,73 +203,137 @@ def get_accounting_balances(device_access_id, currency=None):
                 'usd_balance': user_data.get('usdBalance') if type(user_data) is dict else user_data.usd_balance,
                 'zwg_balance': user_data.get('zwdBalance') if type(user_data) is dict else user_data.zwg_balance,
             }
+        
     except HTTPError as e:
         print(f"HTTP error occurred while fetching user data for device_access_id {device_access_id} from external accounting system:", e)  # Debug log for HTTP errors
         return None
     except requests.RequestException as e:
         print(f"Error fetching user data for device_access_id {device_access_id} from external accounting system:", e)
         return None
+    
+
+def get_access_decisions_list():
+    """Return list of all access id entries with their access decisions for local device caching purposes at the access control device level to allow it to make access decisions even if there are transient issues with the connection to the server or external accounting system"""
+    
+    access_decission_list = []
+
+    staff_access_decission_list = [{"device_access_id": str(staff_id), "access": "GRANT"} for staff_id in STAFF_USER_IDS]
+    access_decission_list.append({"staff": staff_access_decission_list})  # Add staff access decisions to the main access decisions list under a separate key for clarity and to avoid mixing with regular user access decisions, and to allow for easy filtering of staff access decisions in the access control device if needed
+
+    print("Staff access id entries added to access id entry list for GET request to access_event_view:", staff_access_decission_list)  # Debug log to verify staff access id entries being added to the response
+
+    print("Updated access decisions list with staff access decisions for GET request to access_event_view:", access_decission_list)  # Debug log to verify access decisions list after adding staff access decisions
+
+    settings = Setting.get_solo()
+
+    # append for all access ids of auth type card
+    card_access_decission_list = []
+    for access_id_entry in AccessId.objects.filter(auth_type="card"):
+        mapping = access_id_entry.mapping
+        access_decision = get_access_decision(access_id_entry.access_id, mapping, settings)
+        card_access_decission_list.append({
+            "device_access_id": access_id_entry.access_id,
+            "access": access_decision
+        })
+    print("Card access id entries added to access id entry list for GET request to access_event_view:", card_access_decission_list)  # Debug log to verify card access id entries being added to the response
+    access_decission_list.append({"card": card_access_decission_list})  # Add card access decisions to the main access decisions list under a separate key for clarity and to avoid mixing with biometric access decisions, and to allow for easy filtering of card access decisions in the access control device if needed
+
+    # append by device id for all access ids of auth type biometric
+    for access_control_device in AccessControlDevice.objects.filter(is_active=True):
+        device_biometric_access_decission_list = []
+        for access_id_entry in access_control_device.access_ids.filter(auth_type="biometric"):
+            mapping = access_id_entry.mapping
+            access_decision = get_access_decision(access_id_entry.access_id, mapping, settings)
+            device_biometric_access_decission_list.append({
+                "device_access_id": access_id_entry.access_id,
+                "access": access_decision
+            })
+        print("Biometric access id entries added to access id entry list for GET request to access_event_view:", device_biometric_access_decission_list)  # Debug log to verify biometric access id entries being added to the response
+        access_decission_list.append({access_control_device.device_id: device_biometric_access_decission_list})  # Add biometric access decisions to the main access decisions list under a separate key for clarity and to avoid mixing with card access decisions, and to allow for easy filtering of biometric access decisions in the access control device if needed
+
+    # save the compiled access decisions list to the database for visibility in the admin interface and troubleshooting purposes, and to allow for analysis of access decisions being provided to the access control devices over time based on changes to user data and settings
+    SystemMetadata.objects.update_or_create(single_instance_id="singleton", defaults={"access_decision_cache": access_decission_list})
+
+    print("Compiled access decisions list for GET request to access_event_view:", access_decission_list)  # Debug log to verify final compiled access decisions list being returned in the response
+
+    return access_decission_list
 
 
 def get_access_decision(device_access_id, mapping, settings):
     """Return access decision based on the authorization flow setting and relevant balance thresholds if applicable"""
     
     authorization_flow = settings.authorization_flow
+    print(f"Authorization flow setting: {authorization_flow} for device_access_id: {device_access_id} ({mapping.narration})")  # Debug log to verify which authorization flow is being applied for the access decision
 
     match authorization_flow:
         case "grant_all":
-            print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+            # print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+            print("Granted via", authorization_flow) # Debug log to verify which authorization flow is granting access
             return "GRANT"
         case "reject_all":
             print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+            print("Rejected via", authorization_flow) # Debug log to verify which authorization flow is rejecting access
             return "REJECT"
         case "check_usd_balance" | "check_zwg_balance":
             
             filter_currency = 'usd' if authorization_flow == "check_usd_balance" else 'zwg'
+            applicable_balance = getattr(mapping, f'{filter_currency}_balance')
+            applicable_balance_threshold = getattr(settings, f'{filter_currency}_balance_threshold')
+            print(f"Applicable balance threshold for {filter_currency.upper()}: {applicable_balance_threshold}")  # Debug log to verify which balance threshold is applicable for the access decision
 
-            if getattr(mapping, f'{filter_currency}_balance') is not None and getattr(mapping, f'{filter_currency}_balance') >= getattr(settings, f'{filter_currency}_balance_threshold'):
+            if applicable_balance is not None and applicable_balance >= applicable_balance_threshold:
+                print("Values ", applicable_balance, applicable_balance_threshold)  # Debug log to verify balance values for access decision
                 # grant access if user meets balance threshold
                 print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                print("Granted via", authorization_flow) # Debug log to verify which authorization flow is granting access
                 return "GRANT"
             else:
                 # fetch latest balance from external system in case it has changed since last fetch and check again before rejecting access
-                current_balance = get_accounting_balances(mapping.device_access_id, currency=filter_currency.upper())
+                current_balance = get_accounting_balances(device_access_id, currency=filter_currency.upper())
 
-                print(f"Access ID: {device_access_id}, Palladium ID: {mapping.device_access_id}, {filter_currency.upper()} balance: {current_balance}")  # Debug log
+                print(f"Fetched current balance for device_access_id {device_access_id} from external accounting system: {current_balance}")  # Debug log to verify response from external system
+                print(f"Access ID: {device_access_id}, Palladium ID: {mapping.account_user_id}, {filter_currency.upper()} balance: {current_balance}")  # Debug log
 
                 if current_balance is None:
                     # if there was an error fetching balance data from the external system, default to granting access to avoid locking out users due to transient issues with the external system, but log the event for troubleshooting
                     print("Error fetching balance data for device_access_id:", device_access_id, "Defaulting to GRANT access but check logs for troubleshooting.")  # Debug log
+                    print("Granted via", authorization_flow) # Debug log to verify which authorization flow is granting access
                     return "GRANT"
-                elif current_balance >= getattr(settings, f'{filter_currency}_balance_threshold'):
+                elif current_balance >= applicable_balance_threshold:
                     print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
-                    
+                    print("Granted via", authorization_flow) # Debug log to verify which authorization flow is granting access
                     return "GRANT"
                 else:
                     print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+                    print("Rejected via", authorization_flow) # Debug log to verify which authorization flow is rejecting access
                     return "REJECT"
         case "check_usd_or_zwg_balance":
             # check if user meets either balance threshold to grant access
             if ((mapping.usd_balance is not None and mapping.usd_balance >= settings.usd_balance_threshold) or 
                 (mapping.zwg_balance is not None and mapping.zwg_balance >= settings.zwg_balance_threshold)):
+                print(f"Access ID: {device_access_id}, Palladium ID: {mapping.account_user_id}, USD balance: {mapping.usd_balance}/{settings.usd_balance_threshold}, ZWG balance: {mapping.zwg_balance}/{settings.zwg_balance_threshold}")  # Debug log
                 print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                print("Granted via", authorization_flow) # Debug log to verify which authorization flow is granting access
                 return "GRANT"
             else:
                 # fetch latest balances from external system in case they have changed since last fetch and check again before rejecting access
-                current_balances = get_accounting_balances(mapping.device_access_id)
+                current_balances = get_accounting_balances(device_access_id)
 
-                print(f"Access ID: {device_access_id}, Palladium ID: {mapping.device_access_id}, Current balances: {current_balances}")  # Debug log
+                print(f"Access ID: {device_access_id}, Palladium ID: {mapping.account_user_id}, Current balances: {current_balances}")  # Debug log
 
                 if current_balances is None:
                     # if there was an error fetching balance data from the external system, default to granting access to avoid locking out users due to transient issues with the external system, but log the event for troubleshooting
                     print("Error fetching balance data for device_access_id:", device_access_id, "Defaulting to GRANT access but check logs for troubleshooting.")  # Debug log
+                    print("Granted via", authorization_flow) # Debug log to verify which authorization flow is granting access
                     return "GRANT"
                 elif ((current_balances.get('usd_balance') is not None and current_balances.get('usd_balance') >= settings.usd_balance_threshold) or 
                         (current_balances.get('zwg_balance') is not None and current_balances.get('zwg_balance') >= settings.zwg_balance_threshold)):
                     print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+                    print("Granted via", authorization_flow) # Debug log to verify which authorization flow is granting access
                     return "GRANT"
                 else:
                     print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+                    print("Rejected via", authorization_flow) # Debug log to verify which authorization flow is rejecting access
                     return "REJECT"
         case _:
             print("Invalid authorization flow setting. Defaulting to REJECT access for device_access_id:", device_access_id)  # Debug log
@@ -228,12 +341,20 @@ def get_access_decision(device_access_id, mapping, settings):
 
 
 @csrf_exempt
-def access_event_view(request):
+def access_event_view(request, device_serial_number=None):
     """Handle access event from access control device"""
+    global access_decisions_list
+    print(f"Received request at access_event_view with method {request.method} and device_serial_number: {device_serial_number}")  # Debug log to verify incoming requests and device serial number
+
+    access_control_device = AccessControlDevice.objects.filter(device_id=device_serial_number).first() if device_serial_number else None
+
+    if access_control_device and access_control_device.is_active == False:
+        print(f"Access control device {device_serial_number} is inactive. Rejecting access event.")  # Debug log to verify that events from inactive devices are being rejected
+        return JsonResponse({"access": "REJECT"}, status=HTTPStatus.OK)
+
     if request.method == "POST":
 
         try:
-
             print("Received access event:", request.body)  # Debug log
 
             # Parse the incoming JSON data
@@ -244,39 +365,114 @@ def access_event_view(request):
             device_access_id = data.get("access_id") # could be a user_id or card_id depending on the access control system
             print("Extracted device_access_id:", device_access_id)  # Debug log
 
-            mapping = AccountMapping.objects.filter(device_access_id=device_access_id).first()
+            device_access_id = str(device_access_id)  # Ensure device_access_id is a string for consistent processing and logging
 
-            modal_state = MappingModalState.objects.first()
-            if modal_state and modal_state.state == "open":
-                # Insert/update PendingAccountMapping with latest device_access_id
-                PendingAccountMapping.objects.update_or_create(id=1, defaults={"device_access_id": device_access_id})
-                return JsonResponse({"access": "REJECT"})  # always reject while mapping modal is open
+            # log tamper events
+            tamper_events = ["TAMPER_OPEN", "TAMPER_RESTORED", "tamper_enabled", "tamper_disabled"]
+            is_tamper_event = False
+            for tamper_event_prefix in tamper_events:
+                is_tamper_event = True if device_access_id.startswith(tamper_event_prefix) else False
+                if is_tamper_event:
+                    TamperEventLog.objects.create(event_type=tamper_event_prefix, access_control_device=access_control_device if access_control_device else None)
+                    print("Logged tamper event:", tamper_event_prefix)  # Debug log
+                    return JsonResponse({"status": "tamper event logged"}, status=HTTPStatus.OK)
+            
+            # handle mapping of wiegand and card uid for access control devices whose user ids we do have access to beforehand but the users where already enrolled on the device.
+            if device_access_id.startswith("CARD-"):
+                # enter new mapping mode
+                # extract card uid and userid
+                mapping_ids = device_access_id.lstrip("CARD-").split("-WIEGAND-")
+                card_uid = mapping_ids[0] if len(mapping_ids) > 0 else None
+                wiegand_id = mapping_ids[1] if len(mapping_ids) > 1 else None
+                print(f"Extracted card_uid: {card_uid}, wiegand_id: {wiegand_id} from device_access_id: {device_access_id}")  # Debug log
+
+                # get mapping using card uid
+                access_id_entry = AccessId.objects.select_related('mapping').filter(access_id=card_uid).first()
+                mapping = access_id_entry.mapping if access_id_entry else None
+
+                # map wiegand id to the same user if there is a mapping for the card uid and grand access, otherwise reject access
+                if access_id_entry and mapping and wiegand_id:
+                    AccessId.objects.update_or_create(access_id=wiegand_id, defaults={
+                        "auth_type": "biometric",
+                        "mapping": mapping
+                        }
+                    )
+                    _log_access_event(wiegand_id, "grant", mapping, access_type="one_step_mapping", access_control_device=access_control_device if access_control_device else None)
+                    print("Access GRANTED for wiegand_id:", wiegand_id)  # Debug log
+                    return JsonResponse({"access": "GRANT"}, status=HTTPStatus.OK)
+                else:
+                    if wiegand_id:
+                        _log_access_event(wiegand_id, "reject", mapping, access_type="one_step_mapping", access_control_device=access_control_device if access_control_device else None)
+                        print("Access REJECTED for wiegand_id:", wiegand_id)  # Debug log
+                    else:
+                        print("Wiegand ID not provided in device_access_id, cannot process mapping. device_access_id:", device_access_id)  # Debug log
+                    return JsonResponse({"access": "REJECT"}, status=HTTPStatus.OK)
+
+            # normal access event flow for devices without wiegand/card uid mapping scenario
+            access_id_entry = AccessId.objects.select_related('mapping').filter(access_id=device_access_id).first()
+            mapping = access_id_entry.mapping if access_id_entry else None
+
+            if device_access_id in STAFF_USER_IDS:
+                print("Device_access_id is in exceptions list, granting access for testing purposes. device_access_id:", device_access_id)  # Debug log
+                _log_access_event(device_access_id, "grant", access_control_device=access_control_device if access_control_device else None)
+                return JsonResponse({"access": "GRANT"}, status=HTTPStatus.OK)
 
             if not mapping:
                 print("No mapping found for device_access_id:", device_access_id)  # Debug log
+                _log_access_event(device_access_id, "reject", access_control_device=access_control_device if access_control_device else None)
+
                 return JsonResponse({"access": "REJECT"})
+                # return JsonResponse({"access": "GRANT"}) # TEMPORARILY ALLOW FOR NOW, TO RETURN TO REJECT ONCE DONE
             settings = Setting.get_solo()
 
             # continue with access decision logic based on the authorization flow setting and relevant balance thresholds if applicable
-            access_decision = get_access_decision(device_access_id, mapping, settings)
-            _log_access_event(device_access_id, access_decision.lower(), mapping)
+            access_decision = next((decision.get("access") for decision in access_decisions_list if decision.get("device_access_id") == device_access_id), "REJECT")
+
+            if access_decision == "GRANT":
+                print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
+            else:
+                print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
+                access_decision = get_access_decision(device_access_id, mapping, settings)  # fetch fresh access decision based on the latest user data from the external system at the time of the access event in case there have been changes since the last fetch to ensure accurate access decisions based on the most up-to-date user data
+
+            _log_access_event(device_access_id, access_decision.lower(), mapping, access_control_device=access_control_device if access_control_device else None)
             return JsonResponse({"access": access_decision}, status=HTTPStatus.OK)
                                 
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
         
     elif request.method == "GET":
-        # return list of all mappings against access decision for local device caching purposes at the access control device level to allow it to make access decisions even if there are transient issues with the connection to the server or external accounting system, but in a real implementation we would want to ensure that the access control device is regularly syncing with the server to have the most up-to-date mapping and user data for accurate access decisions based on the latest user data from the external system
-        mappings = AccountMapping.objects.filter(device_access_id__isnull=False)
-        print(f"Returning {mappings.count()} mappings for GET request to access_event_view")  # Debug log to verify number of mappings being returned
-        mapping_list = []
-        for mapping in mappings:
-            access_decision = get_access_decision(mapping.device_access_id, mapping, Setting.get_solo())
-            mapping_list.append({
-                "device_access_id": mapping.device_access_id,
-                "access": access_decision
-            })
-        return JsonResponse({"mappings": mapping_list}, status=HTTPStatus.OK)
+        # return list of all mappings against access decision for local device caching purposes at the access control device level to allow it to make access decisions even if there are transient issues with the connection to the server or external accounting system.
+
+        if access_decisions_list:
+            print("Using cached access decisions list for GET request to access_event_view:", access_decisions_list)  # Debug log to verify that cached access decisions list is being used
+        else:
+            print("No cached access decisions list available for GET request to access_event_view, fetching fresh access decisions list.")  # Debug log to verify that fresh access decisions list is being fetched due to cache miss
+
+            access_decisions_list = get_access_decisions_list()  # fetch fresh access decisions list to ensure we are providing access control device with the necessary data to make access decisions at the time of the access event in case there have been changes since the last fetch to ensure accurate access decisions based on the most up-to-date user data
+
+        computed_access_decisions_list = []
+        # add all staff and card access decisions to the computed access decisions list for local device caching purposes at the access control device level
+        for category in access_decisions_list:
+            if category.get("staff"):
+                computed_access_decisions_list.extend(category.get("staff", []))
+            elif category.get("card"):
+                computed_access_decisions_list.extend(category.get("card", []))
+            elif device_serial_number and category.get(device_serial_number):
+                computed_access_decisions_list.extend(category.get(device_serial_number, []))
+
+        # log sync event for visibility in admin interface and troubleshooting purposes
+        AccessDeviceSyncLog.objects.create(
+            device=access_control_device if access_control_device else None,
+            success=True if access_decisions_list else False,
+            timestamp=timezone.now(),
+        )
+
+        # log last sync time for access device in system metadata for visibility in admin interface and troubleshooting purposes
+        SystemMetadata.objects.update_or_create(single_instance_id="singleton", defaults={"last_device_sync_at": timezone.now()})
+
+        # temporarily fail the request to prevent device from updating
+        # return JsonResponse({"status": "temporary error"}, status=HTTPStatus.BAD_REQUEST)
+        return JsonResponse({"mappings": computed_access_decisions_list}, status=HTTPStatus.OK)
 
     else:
         return JsonResponse({"error": "Invalid request method"}, status=405)
@@ -323,10 +519,15 @@ def handle_create_mapping(request, filter_name=None):
         account_user_id = data.get("account_user_id")
         print("Extracted data:", device_access_id, account_user_id)  # Debug log
 
-        if AccountMapping.objects.filter(device_access_id=device_access_id).exists():
+        mapping = AccountMapping.objects.filter(account_user_id=account_user_id).first()
+        if not mapping:
+            return JsonResponse({"error": "No accounting user found for the provided account_user_id"}, status=HTTPStatus.BAD_REQUEST)
+
+        existing_access = AccessId.objects.filter(access_id=device_access_id).first()
+        if existing_access and existing_access.mapping_id != mapping.id:
             return JsonResponse({"error": "This device's Access ID is already mapped to another account"}, status=HTTPStatus.BAD_REQUEST)
 
-        AccountMapping.objects.update_or_create( account_user_id=account_user_id, defaults={"device_access_id": device_access_id})
+        AccessId.objects.update_or_create(access_id=device_access_id, defaults={"mapping": mapping})
         PendingAccountMapping.objects.all().delete()
         return JsonResponse({"status": "created"}, status=HTTPStatus.CREATED)
     except json.JSONDecodeError:
@@ -342,49 +543,106 @@ def handle_delete_mapping(request, filter_name=None):
     if not mapping:
         return JsonResponse({"error": "No mapping found for that account user."}, status=HTTPStatus.NOT_FOUND)
 
-    mapping.device_access_id = None
-    mapping.save()
+    mapping.access_ids.all().delete()
     return JsonResponse({"status": "unmapped"}, status=HTTPStatus.NO_CONTENT)
 
 
-def fetch_external_users():
-    """An endpoint helper function to fetch users from the external accounting system and update the AccountMapping table with any new users or updated user info (e.g. balance)"""
-        
+def sync_external_users():
+    """Fetch external users and upsert local mapping records."""
+
     try:
-        r = requests.get(f'{EXTERNAL_ACCOUNTING_URL}', timeout=30)
+        r = requests.get(f'{EXTERNAL_ACCOUNTING_URL}', timeout=60)
         r.raise_for_status()
         users = r.json()
         print(f"Fetched {len(users)} users from external accounting system:", users)  # Debug log to verify response from external system 
 
-        # update database with any new users from the external system that are not already in the AccountMapping table
-        AccountMapping.objects.bulk_create(
-            [
-                AccountMapping(
-                    account_user_id=str(user.get('cardId')), # Assuming cardId is the unique identifier for the user in the external system 
-                    first_name=user.get('firstName', ''),
-                    last_name=user.get('lastName', ''),
-                    narration=user.get('custDesc', ''),
-                    usd_balance=user.get('balanceUSD', -9999999.00),
-                    zwg_balance=user.get('balanceZWG', -9999999.00),
-                    last_updated_at=timezone.now(),
-                ) for user in users
-            ],
-            update_conflicts=True,
-            unique_fields=['account_user_id',],
-            update_fields=['first_name', 'last_name', 'narration', 'usd_balance', 'zwg_balance', 'last_updated_at']
+        # for user in users create or update AccessId entry with the corresponding mapping to ensure we have the most up-to-date user data and mapping state for access decisions at the time of the access event, but in a real implementation we would want to optimize this to only update the entries that have changed since the last fetch to minimize database writes and potential performance impact
+        for user in users:
+
+            # log to file the whole user data object values for each user from external system to verify data structure and values before creating/updating mapping entries
+            with open("mapping_log.txt", "a") as f:
+                f.write(f"Processing user from external system with account number: {user.get('accountNumber')}, first name: {user.get('firstName')}, last name: {user.get('lastName')}, member name: {user.get('memberName')}, usd balance: {user.get('usdBalance')}, zwg balance: {user.get('zwdBalance')} at {timezone.now()}\n")    
+
+            # create of update AccountMapping entry for the user
+            mapping, created = AccountMapping.objects.update_or_create(
+                account_user_id=str(user.get('accountNumber')), # Assuming accountNumber is the unique identifier for the user in the external system
+                defaults={
+                    'first_name': user.get('firstName', ''),
+                    'last_name': user.get('lastName', ''),
+                    'narration': str(user.get('memberName', '')).upper(),
+                    'usd_balance': user.get('usdBalance', -9999999.00),
+                    'zwg_balance': user.get('zwdBalance', -9999999.00),
+                    'last_updated_at': timezone.now(),
+                }
+            )
+            # print(f"Account number: {user.get('accountNumber')}. {'Created' if created else 'Updated'} AccountMapping for account_user_id {mapping.account_user_id} with first_name: {mapping.first_name}, last_name: {mapping.last_name}, narration: {mapping.narration}, usd_balance: {mapping.usd_balance}, zwg_balance: {mapping.zwg_balance}")  # Debug log to verify creation or update of AccountMapping entry for each user from external system
+
+            # log creation or update of AccountMapping entry for each user from external system to file
+            with open("mapping_log.txt", "a") as f:
+                f.write(f"Account number: {user.get('accountNumber')}. {'Created' if created else 'Updated'} AccountMapping for account_user_id {mapping.account_user_id} with first_name: {mapping.first_name}, last_name: {mapping.last_name}, narration: {mapping.narration}, usd_balance: {mapping.usd_balance}, zwg_balance: {mapping.zwg_balance} at {timezone.now()}\n")
+
+            # create or update AccessId entry
+            access, _ = AccessId.objects.update_or_create(
+                access_id=str(user.get('cardId')),
+                defaults={
+                    "auth_type": "card",  # Assuming auth_type is card for all users from the external system, but in a real implementation we would want to ensure we are capturing the correct auth_type for each user based on the data from the external system
+                    "mapping": mapping
+                }
+            )
+
+            # log creation or update of AccessId entry for each user from external system to file
+            with open("mapping_log.txt", "a") as f:
+                f.write(f"Account number: {user.get('accountNumber')}. {'Created' if _ else 'Updated'} AccessId for access_id {access.access_id} with auth_type: {access.auth_type} mapped to account_user_id {mapping.account_user_id} at {timezone.now()}\n")
+
+        # deletions for biometric entries will be handled manually through a separate admin interface for now since we don't have a unique identifier for those users from the external system in this demo implementation, but in a real implementation we would want to ensure we are also handling deletions and updates for all types of entries based on the data from the external system to keep the mapping state up-to-date and accurate for access decisions
+
+        # update cached access decisions in system metadata and update in memory list to optimize access decision response time for access control device and log fetch event in system metadata for visibility in admin interface and troubleshooting purposes
+
+        global access_decisions_list
+        access_decisions_list = get_access_decisions_list()  # refresh in-memory cache with latest data after sync
+
+        SystemMetadata.objects.update_or_create(
+            single_instance_id="singleton", 
+            defaults={
+                "last_successful_mapping_update_at": timezone.now(),
+                "access_decision_cache": access_decisions_list
+            }
         )
 
-        # handle deletions of users from the external system and remove them from the AccountMapping table or mark them as inactive
-        external_user_ids = {str(user.get('cardId')) for user in users}
-        AccountMapping.objects.exclude(account_user_id__in=external_user_ids).delete()
+        print("External users synced and local mapping records updated successfully.")  # Debug log to confirm successful sync
+        print(f"Access decisions cache updated with {len(access_decisions_list)} entries after syncing external users.")  # Debug log to verify access decisions cache update after syncing external users
 
-        return JsonResponse({"status": "external users updated"}, status=HTTPStatus.OK)
+        return {
+            "ok": True,
+            "status": "external users updated",
+            "updated_count": len(users),
+        }
     except HTTPError as e:
         print("HTTP error occurred while fetching users from external accounting system:", e)  # Debug log for HTTP errors
-        return JsonResponse({"error": "Failed to fetch users from external accounting system due to HTTP error"}, status=HTTPStatus.BAD_GATEWAY)
+        logger.exception("HTTP error occurred while fetching users from external accounting system")
+        return {
+            "ok": False,
+            "error": "Failed to fetch users from external accounting system due to HTTP error",
+            "status": HTTPStatus.BAD_GATEWAY,
+        }
     except RequestException as e:
         print("Error fetching users from external accounting system:", e)  # Debug log for error handling
-        return JsonResponse({"error": "Failed to fetch users from external accounting system"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        logger.exception("Error fetching users from external accounting system")
+        return {
+            "ok": False,
+            "error": "Failed to fetch users from external accounting system",
+            "status": HTTPStatus.INTERNAL_SERVER_ERROR,
+        }
+
+
+def fetch_external_users():
+    """HTTP endpoint helper that syncs users from the external accounting system."""
+
+    result = sync_external_users()
+    if result.get("ok"):
+        return JsonResponse({"status": result["status"], "updated_count": result["updated_count"]}, status=HTTPStatus.OK)
+
+    return JsonResponse({"error": result.get("error", "Failed to fetch users from external accounting system")}, status=result.get("status", HTTPStatus.INTERNAL_SERVER_ERROR))
 
     
 @csrf_exempt
@@ -402,6 +660,33 @@ def set_modal_state_view(request):
                 PendingAccountMapping.objects.all().delete()
 
             return JsonResponse({"status": "created"} , status=HTTPStatus.CREATED)
+        
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=HTTPStatus.BAD_REQUEST)
+    else:
+        return JsonResponse({"error": "Invalid request method"}, status=HTTPStatus.METHOD_NOT_ALLOWED)
+
+
+@csrf_exempt
+def dump_database_view(request):
+    """API endpoint to dump the database for debugging purposes, protected by a simple secret key check since this is a potentially sensitive operation that should not be exposed publicly"""
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            secret_key = data.get("secret_key")
+
+            if secret_key != DUMP_DATABASE_SECRET_KEY:
+                return JsonResponse({"error": "Invalid secret key"}, status=HTTPStatus.UNAUTHORIZED)
+
+            # Dump the database using Django's dumpdata command
+            from django.core import management
+            from io import StringIO
+
+            out = StringIO()
+            management.call_command('dumpdata', stdout=out)
+            database_dump = out.getvalue()
+
+            return JsonResponse({"database_dump": database_dump}, status=HTTPStatus.OK)
         
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=HTTPStatus.BAD_REQUEST)
