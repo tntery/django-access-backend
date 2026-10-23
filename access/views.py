@@ -351,7 +351,7 @@ def fetch_external_users():
     """An endpoint helper function to fetch users from the external accounting system and update the AccountMapping table with any new users or updated user info (e.g. balance)"""
         
     try:
-        r = requests.get(f'{EXTERNAL_ACCOUNTING_URL}', timeout=15)
+        r = requests.get(f'{EXTERNAL_ACCOUNTING_URL}', timeout=30)
         r.raise_for_status()
         users = r.json()
         print(f"Fetched {len(users)} users from external accounting system:", users)  # Debug log to verify response from external system 
