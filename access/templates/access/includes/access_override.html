@@ -1,0 +1,26 @@
+<div class="mb-2">
+    <span class="badge {% if mapping.access_override == 'auto' %}bg-secondary{% elif mapping.access_override == 'grant' %}bg-success{% else %}bg-danger{% endif %}">
+        {{ mapping.access_decision_type }}{% if mapping.access_override != 'auto' %}: {{ mapping.get_access_override_display }}{% endif %}
+    </span>
+</div>
+{% if can_manage_mappings %}
+<form method="post" action="{% url 'account_mapping_override' mapping.pk %}"
+      class="access-override-form" data-current="{{ mapping.access_override }}" data-member="{{ mapping.get_full_name }}">
+    {% csrf_token %}
+    {% if return_to == 'list' %}
+    <input type="hidden" name="return_to" value="list">
+    <input type="hidden" name="list_query" value="{{ request.GET.urlencode }}">
+    {% endif %}
+    <fieldset>
+        <legend class="visually-hidden">Access decision for {{ mapping.get_full_name }}</legend>
+        <div class="btn-group btn-group-sm">
+            {% for value, label in mapping.ACCESS_OVERRIDE_CHOICES %}
+            <input type="radio" class="btn-check" name="access_override" id="override-{{ mapping.pk }}-{{ value }}"
+                   value="{{ value }}" {% if mapping.access_override == value %}checked{% endif %}>
+            <label class="btn btn-outline-dark" for="override-{{ mapping.pk }}-{{ value }}">{{ label }}</label>
+            {% endfor %}
+        </div>
+    </fieldset>
+    <button type="submit" class="btn btn-sm btn-outline-primary mt-2 override-save">Save decision</button>
+</form>
+{% endif %}

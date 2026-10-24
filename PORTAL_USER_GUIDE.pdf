@@ -1,0 +1,169 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [6 0 R 8 0 R 10 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+5 0 obj
+<< /Length 4197 >>
+stream
+0.12 0.25 0.40 rg
+BT /F2 9 Tf 50 814 Td (VERIGATE SMART ACCESS CONTROL) Tj ET
+0 0 0 rg
+0.75 w 50 804 m 545 804 l S
+BT /F2 21 Tf 50 785 Td (Verigate Smart Access Control) Tj ET
+BT /F2 15 Tf 50 754 Td (Portal user guide) Tj ET
+BT /F1 10 Tf 50 728 Td (This guide explains how authorised Belgravia Sports Club portal users can sign in, find a user) Tj ET
+BT /F1 10 Tf 50 715 Td (record, and understand the access information shown in the portal.) Tj ET
+BT /F1 10 Tf 50 695 Td (The portal is an administrative information and access-management tool. It is not a self-service) Tj ET
+BT /F1 10 Tf 50 682 Td (membership registration page or a button for opening a door. Your available actions depend on) Tj ET
+BT /F1 10 Tf 50 669 Td (the role assigned to your portal account.) Tj ET
+BT /F2 15 Tf 50 644 Td (1. Sign in) Tj ET
+BT /F1 10 Tf 50 618 Td (1. Open the portal using the web address supplied by Belgravia Sports Club.) Tj ET
+BT /F1 10 Tf 50 605 Td (2. Select Login if you are not already on the sign-in page.) Tj ET
+BT /F1 10 Tf 50 592 Td (3. Enter the username and password supplied by your portal administrator, then select Login.) Tj ET
+BT /F1 10 Tf 50 579 Td (4. Check the username and role shown in the top navigation. Select Logout when you have) Tj ET
+BT /F1 10 Tf 50 566 Td (finished, especially on a shared device.) Tj ET
+BT /F1 10 Tf 50 546 Td (Portal accounts are created by an administrator; there is no self-registration link. If you) Tj ET
+BT /F1 10 Tf 50 533 Td (cannot sign in, your account is inactive, or you have forgotten your password, contact your) Tj ET
+BT /F1 10 Tf 50 520 Td (portal administrator or use the support contacts at the end of this guide. Do not send your) Tj ET
+BT /F1 10 Tf 50 507 Td (password to anyone.) Tj ET
+BT /F2 15 Tf 50 482 Td (2. Understand your role) Tj ET
+BT /F1 10 Tf 50 456 Td (- Viewer ? can view user connections, account details, linked access IDs, access decisions, and) Tj ET
+BT /F1 10 Tf 50 443 Td (  recorded access events.) Tj ET
+BT /F1 10 Tf 50 430 Td (- Staff ? has Viewer access and can manage mappings, linked access IDs, and a user's access) Tj ET
+BT /F1 10 Tf 50 417 Td (  decision.) Tj ET
+BT /F1 10 Tf 50 404 Td (- Admin ? has Staff access and can also manage portal users, application settings, and user) Tj ET
+BT /F1 10 Tf 50 391 Td (  synchronisation.) Tj ET
+BT /F1 10 Tf 50 371 Td (The role shown beside your username indicates your portal permissions. Portal roles are separate) Tj ET
+BT /F1 10 Tf 50 358 Td (from physical membership and do not themselves guarantee that a credential will open a door.) Tj ET
+BT /F2 15 Tf 50 333 Td (3. Find a user) Tj ET
+BT /F1 10 Tf 50 307 Td (After signing in, the User Connections page shows the user list and summary counts.) Tj ET
+BT /F1 10 Tf 50 287 Td (1. Open Quick actions to see the search and filter controls.) Tj ET
+BT /F1 10 Tf 50 274 Td (2. Search by a name, accounting user ID, narration/display name, or access ID. You can also) Tj ET
+BT /F1 10 Tf 50 261 Td (filter by Connected / Not Connected status and Staff / Member classification.) Tj ET
+BT /F1 10 Tf 50 248 Td (3. Select Filter to apply your choices, or Clear to remove them.) Tj ET
+BT /F1 10 Tf 50 235 Td (4. If results span more than one page, use the page links below the list.) Tj ET
+BT /F1 10 Tf 50 222 Td (5. Select View beside a record to open its details.) Tj ET
+BT /F1 10 Tf 50 202 Td (The list can show the user's name, classification, balances, whether an access ID is linked, and) Tj ET
+BT /F1 10 Tf 50 189 Td (the current access-decision type. Information such as balances is account information; it is not) Tj ET
+BT /F1 10 Tf 50 176 Td (a real-time device status.) Tj ET
+BT /F2 15 Tf 50 151 Td (4. Read a user's details) Tj ET
+BT /F1 10 Tf 50 125 Td (The details page may include:) Tj ET
+BT /F1 10 Tf 50 105 Td (- Account details ? the accounting user ID, name, classification, and available account) Tj ET
+BT /F1 10 Tf 50 92 Td (  information.) Tj ET
+BT /F1 10 Tf 50 79 Td (- Mapping access decision ? whether the record uses Auto, a manual Grant, or a manual Reject.) Tj ET
+0.75 w 50 38 m 545 38 l S
+BT /F1 8 Tf 50 24 Td (Portal user guide - Belgravia Sports Club) Tj ET
+BT /F1 8 Tf 515 24 Td (1) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 4905 >>
+stream
+0.12 0.25 0.40 rg
+BT /F2 9 Tf 50 814 Td (VERIGATE SMART ACCESS CONTROL) Tj ET
+0 0 0 rg
+0.75 w 50 804 m 545 804 l S
+BT /F1 10 Tf 50 785 Td (- Linked access IDs ? credential identifier, authentication type \(for example, card, biometric,) Tj ET
+BT /F1 10 Tf 50 772 Td (  or PIN\), assigned device/location, configured device status, and last successful sync if) Tj ET
+BT /F1 10 Tf 50 759 Td (  recorded.) Tj ET
+BT /F1 10 Tf 50 746 Td (- Access summary and events/logs ? recorded grant/reject decisions and event details, including) Tj ET
+BT /F1 10 Tf 50 733 Td (  time and device where known.) Tj ET
+BT /F1 10 Tf 50 713 Td (Use Back to User Connections to return to the list. Events are records of attempts attributed to) Tj ET
+BT /F1 10 Tf 50 700 Td (that user; an event list may not include unattributed attempts.) Tj ET
+BT /F2 11 Tf 50 675 Td (What the status labels mean) Tj ET
+BT /F1 10 Tf 50 654 Td (- Connected means an access ID is linked to the user. It does not mean access is currently) Tj ET
+BT /F1 10 Tf 50 641 Td (  granted.) Tj ET
+BT /F1 10 Tf 50 628 Td (- Not Connected means the portal has no enabled linked access ID for that user.) Tj ET
+BT /F1 10 Tf 50 615 Td (- Active / Inactive is the device's configured status, not a live connectivity test.) Tj ET
+BT /F1 10 Tf 50 602 Td (- Last successful sync shows the last successful device sync recorded by the portal. It may not) Tj ET
+BT /F1 10 Tf 50 589 Td (  reflect the device's current state.) Tj ET
+BT /F1 10 Tf 50 576 Td (- Grant / Reject is the recorded access decision. If no events are shown, the portal has no) Tj ET
+BT /F1 10 Tf 50 563 Td (  recorded event attributed to that mapping.) Tj ET
+BT /F2 11 Tf 50 538 Td (Automatic and manual decisions) Tj ET
+BT /F1 10 Tf 50 517 Td (- Auto uses the club's configured authorisation rules. In Auto, Staff are granted access;) Tj ET
+BT /F1 10 Tf 50 504 Td (  Members are evaluated using those rules.) Tj ET
+BT /F1 10 Tf 50 491 Td (- A manual Grant or Reject overrides the automatic decision for every access ID linked to that) Tj ET
+BT /F1 10 Tf 50 478 Td (  mapping.) Tj ET
+BT /F1 10 Tf 50 465 Td (- A disconnected ID or inactive device still rejects access. A device that is offline receives) Tj ET
+BT /F1 10 Tf 50 452 Td (  changes at its next successful sync, so updates may not take effect immediately.) Tj ET
+BT /F1 10 Tf 50 432 Td (If you believe a decision or user record is wrong, contact the club or portal administrator. Do) Tj ET
+BT /F1 10 Tf 50 419 Td (not attempt to correct a record unless your role and club procedures authorise you to do so.) Tj ET
+BT /F2 15 Tf 50 394 Td (5. Staff and Admin actions) Tj ET
+BT /F1 10 Tf 50 368 Td (Only users with the appropriate role see management controls.) Tj ET
+BT /F1 10 Tf 50 348 Td (- Staff can create or edit mappings, connect or update access IDs, disconnect linked IDs, and) Tj ET
+BT /F1 10 Tf 50 335 Td (  save a manual access decision. Review the selected user, credential, device, and decision) Tj ET
+BT /F1 10 Tf 50 322 Td (  before saving. A disconnected ID is protected from automatic reconnection; reconnect it) Tj ET
+BT /F1 10 Tf 50 309 Td (  through Connect access ID if authorised.) Tj ET
+BT /F1 10 Tf 50 296 Td (- Admin can also use Portal users to create or edit portal accounts and roles, use Settings to) Tj ET
+BT /F1 10 Tf 50 283 Td (  manage authorisation configuration, and synchronise user data from the accounting system.) Tj ET
+BT /F1 10 Tf 50 270 Td (- When an administrator synchronises users, the list may be updated and users deleted from the) Tj ET
+BT /F1 10 Tf 50 257 Td (  external accounting system may be removed. Use this action only when authorised and when the) Tj ET
+BT /F1 10 Tf 50 244 Td (  club's procedures call for it.) Tj ET
+BT /F1 10 Tf 50 231 Td (- Some changes are applied to a device only when that device next synchronises. Do not promise) Tj ET
+BT /F1 10 Tf 50 218 Td (  an immediate access change based only on a successful save in the portal.) Tj ET
+BT /F1 10 Tf 50 198 Td (If a management control is missing, your role may not permit that action. Contact an) Tj ET
+BT /F1 10 Tf 50 185 Td (administrator rather than sharing login details or using another person's account.) Tj ET
+BT /F2 15 Tf 50 160 Td (6. Get help) Tj ET
+BT /F1 10 Tf 50 134 Td (When reporting a problem, include the user's name or accounting user ID, the approximate time of) Tj ET
+BT /F1 10 Tf 50 121 Td (the attempt, the location/device if known, and the decision displayed by the portal. Share) Tj ET
+BT /F1 10 Tf 50 108 Td (credential identifiers or personal information only through a private, approved channel. Never) Tj ET
+BT /F1 10 Tf 50 95 Td (include your portal password.) Tj ET
+BT /F1 10 Tf 50 75 Td (- Support phone / WhatsApp: +263 787 470 156 \(+263787470156\)) Tj ET
+0.75 w 50 38 m 545 38 l S
+BT /F1 8 Tf 50 24 Td (Portal user guide - Belgravia Sports Club) Tj ET
+BT /F1 8 Tf 515 24 Td (2) Tj ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Length 528 >>
+stream
+0.12 0.25 0.40 rg
+BT /F2 9 Tf 50 814 Td (VERIGATE SMART ACCESS CONTROL) Tj ET
+0 0 0 rg
+0.75 w 50 804 m 545 804 l S
+BT /F1 10 Tf 50 785 Td (- Support website: https://sesdeq.co.zw \(https://sesdeq.co.zw\)) Tj ET
+0.75 w 50 765 m 545 765 l S
+BT /F1 10 Tf 50 745 Td (Verigate Smart Access Control) Tj ET
+BT /F1 10 Tf 50 732 Td (Portal access and permissions are managed by Belgravia Sports Club.) Tj ET
+0.75 w 50 38 m 545 38 l S
+BT /F1 8 Tf 50 24 Td (Portal user guide - Belgravia Sports Club) Tj ET
+BT /F1 8 Tf 515 24 Td (3) Tj ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 9 0 R >>
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000134 00000 n 
+0000000204 00000 n 
+0000000279 00000 n 
+0000004527 00000 n 
+0000004663 00000 n 
+0000009619 00000 n 
+0000009755 00000 n 
+0000010333 00000 n 
+trailer
+<< /Size 11 /Root 1 0 R >>
+startxref
+10470
+%%EOF

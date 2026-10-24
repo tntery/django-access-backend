@@ -4,6 +4,10 @@ let pollMappingIntervalId = null;
 let modalMode = 'map'; // 'map' or 'unmap'
 let mappingModalInstance = null;
 
+function csrfToken() {
+    return document.querySelector('[name="csrfmiddlewaretoken"]').value;
+}
+
 document.addEventListener("DOMContentLoaded", function() {
 
     mappingModalInstance = new bootstrap.Modal(document.getElementById('mappingModal'));
@@ -60,7 +64,7 @@ function showAlert(message, type = 'success', placement = 'body') {
 function updateDBModalState(state) {
     fetch("api/modal-state", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken()},
         body: JSON.stringify({ state })
     }).then(res => {
         if (!res.ok) {
@@ -206,7 +210,7 @@ function confirmMapping() {
 
     fetch("api/mappings", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken()},
         body: JSON.stringify({ device_access_id, account_user_id: selectedAccountingId })
     }).then(res => {
         if (!res.ok) {
@@ -233,6 +237,7 @@ function syncUsers() {
 
     fetch('api/mappings/update', {
         method: 'POST',
+        headers: {"X-CSRFToken": csrfToken()},
     }).then(async (res) => {
         const data = await res.json();
         if (!res.ok) {
@@ -255,6 +260,7 @@ function syncUsers() {
 function removeMapping() {
     fetch("api/mappings/" + selectedAccountingId, {
         method: "DELETE",
+        headers: {"X-CSRFToken": csrfToken()},
     }).then(async res => {
         if (!res.ok) {
             const errData = await res.json();

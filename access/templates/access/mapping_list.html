@@ -22,6 +22,14 @@
                 Belgravia Sports Club
             </h6>
             <h2 class="h4 mb-1 text-uppercase">User Connections</h2>
+            {% if can_manage_mappings %}
+            <a href="{% url 'mapping_create' %}" class="btn btn-sm btn-primary my-2">Create local mapping</a>
+            {% endif %}
+            <span>
+                <span class="badge bg-secondary">{{ total_users }} Total Users</span>
+                <span class="badge bg-success">{{ connected_access_ids }} Access IDs</span>
+                <span class="badge bg-danger">{{ not_connected_users }} Not Connected</span>
+            </span>
             <p class="mb-1 mt-2">Manage your connection pairing between the access control system user and the corresponding
                 accounting system user here.</p>
         </div>
@@ -29,8 +37,12 @@
             <h6>Quick stats</h6>
             <table class="text-muted">
                 <tr>
-                    <td>Last synced:</td>
-                    <td>{{ last_updated|naturaltime }}</td>
+                    <td>Users Last synced:</td>
+                    <td>{{ mapping_last_updated|naturaltime }}</td>
+                </tr>
+                <tr>
+                    <td>Device Last synced:</td>
+                    <td>{{ access_device_last_synced_at|naturaltime }}</td>
                 </tr>
                 <tr>
                     <td>Last access event:</td>
@@ -83,6 +95,10 @@
                         {{ mapping_filter.form.account_user_id.label_tag }}
                         {{ mapping_filter.form.account_user_id }}
                     </div>
+                    <div class="col-md-3">
+                        {{ mapping_filter.form.classification.label_tag }}
+                        {{ mapping_filter.form.classification }}
+                    </div>
                     <div class="col-md-2 d-flex gap-2">
                         <button type="submit" class="btn btn-sm btn-primary w-100">Filter</button>
                         <a href="{% url 'account_mapping_list' %}" class="btn btn-sm btn-outline-dark w-100">Clear</a>
@@ -93,20 +109,28 @@
     </details>
 
     <section class="table-responsive">
-        <table class="table table-responsive  table-striped mt-4 border-top">
+        <table class="table table-responsive  table-striped mt-4 mb-0 border-top">
             <thead>
-                <tr>
+                <tr class="border">
+                    <th></th>
                     <th>Full Name</th>
                     <th class="text-end pe-5 ps-0">USD Balance</th>
                     <th class="text-end pe-5 ps-0">ZWG Balance</th>
                     <th>Status</th>
-                    <th>Action</th>
+                    <th>Access decision</th>
+                    <!-- <th>Action</th> -->
                 </tr>
             </thead>
             <tbody>
                 {% for u in users %}
-                <tr data-accounting-id="{{ u.account_user_id }}" data-full-name="{{ u.get_full_name }}">
-                    <td>{{ u.get_full_name }}</td>
+                <tr data-accounting-id="{{ u.account_user_id }}" data-full-name="{{ u.get_full_name }}" class="border">
+
+                    <td><a href="{% url 'account_mapping_detail' u.pk %}" class="link-dark">View <i class="bi bi-eye"></i></a></td> <!-- Icon column for detail view link -->
+                    <td>
+                        {{ u.get_full_name }}
+                        <span class="badge bg-info text-dark">{{ u.get_classification_display }}</span>
+                        {% if u.is_manual %}<span class="badge bg-secondary">Local</span>{% endif %}
+                    </td>
                     <td class="text-end pe-5 ps-0">{{ u.usd_balance }}</td>
                     <td class="text-end pe-5 ps-0">{{ u.zwg_balance }}</td>
                     <td>
@@ -119,7 +143,8 @@
                         <span id="pendingBadge-{{ u.account_user_id }}" class="badge bg-warning d-none">Pending
                             Connection</span>
                     </td>
-                    <td>
+                    <td>{% include "access/includes/access_override.html" with mapping=u return_to="list" %}</td>
+                    <!-- <td>
                         {% if u.device_access_id %}
                         <button class="btn btn-sm btn-outline-danger" onclick="openUnmapModal(this)">
                             Disconnect
@@ -131,7 +156,7 @@
                             <i class="bi bi-plug ms-1"></i>
                         </button>
                         {% endif %}
-                    </td>
+                    </td> -->
                 </tr>
                 {% empty %}
                 <tr>
@@ -141,10 +166,15 @@
             </tbody>
         </table>
     </section>
+    
 
     {% if page_obj.paginator.num_pages > 1 %}
     <nav aria-label="User connections pages" class="mt-2">
-        <ul class="pagination pagination-sm flex-wrap justify-content-center justify-content-md-start gap-1 mapping-pagination">
+        <!-- showing ... of ... results -->
+         <p class="text-start text-muted fst-italic mt-0 mb-2">
+            Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ page_obj.paginator.count }} results
+        </p>
+        <ul class="pagination pagination-sm flex-wrap justify-content-center justify-content-md-start gap-1 mapping-pagination mb-2">
             <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
                 <a class="page-link"
                     href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}"
@@ -174,7 +204,13 @@
     
 </div>
 
+<!-- powered by footer -->
+<footer class="text-center text-muted fst-italic mt-4 mb-2 py-4 bg-body-secondary">
+    Powered by <a href="https://sesdeq.co.zw" class="link-secondary" target="_blank">Sesdeq Digital</a>
+</footer>
+
 <!-- Mapping Modal -->
+{% if can_manage_mappings %}
 <div class="modal fade" id="mappingModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -182,6 +218,7 @@
                 <h5 class="modal-title" id="mappingModalTitle">Connection Pending</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="closeMappingModal()"></button>
             </div>
+            {% endif %}
             <div class="modal-body">
                 <div id="modalAlert" class="alert alert-danger d-flex align-items-center d-none" role="alert">
                     <i class="bi bi-exclamation-triangle-fill me-2"></i>
@@ -218,5 +255,8 @@
 {% endblock %}
 
 {% block extra_scripts %}
+{% if can_manage_mappings %}
 <script src="{% static 'access/js/app.js' %}"></script>
+<script src="{% static 'access/js/access_override.js' %}"></script>
+{% endif %}
 {% endblock %}

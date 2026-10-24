@@ -22,11 +22,34 @@
             <a class="navbar-brand" href="/">
                 <img src="{% static 'access/img/smart-access-control-logo.png' %}" alt="smart-access-control-logo" width="200" height="60">
             </a>
-            <div class="ms-auto">
+            <div class="ms-auto d-flex align-items-center">
+                {% if request.user.is_authenticated %}
+                <span class="badge text-bg-light border me-2">
+                    <i class="bi bi-person-circle me-1"></i>
+                    {{ request.user.get_username }} &middot; {{ portal_role|title }}
+                </span>
+                {% if can_manage_users %}
+                <a href="{% url 'portal_user_list' %}" class="btn btn-sm btn-outline-dark me-2">
+                    <i class="bi bi-people me-1"></i> Portal users
+                </a>
                 <a href="{% url 'settings' %}" class="btn btn-sm btn-outline-dark">
                     <i class="bi bi-sliders2-vertical me-1"></i>
                     Settings
                 </a>
+                {% endif %}
+                <form action="{% url 'logout' %}" method="post" class="d-inline ms-2">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-box-arrow-right me-1"></i>
+                        Logout
+                    </button>
+                </form>
+                {% else %}
+                <a href="{% url 'login' %}" class="btn btn-sm btn-outline-dark">
+                    <i class="bi bi-box-arrow-in-right me-1"></i>
+                    Login
+                </a>
+                {% endif %}
             </div>
         </div>
     </nav>

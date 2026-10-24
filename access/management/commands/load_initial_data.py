@@ -6,7 +6,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
-from access.models import AccountMapping, MappingModalState
+from access.models import AccessId, AccountMapping, MappingModalState
 from access.management.seed_data import INITIAL_ACCOUNT_MAPPINGS
 
 EXTERNAL_ACCOUNTING_DB_NAME = 'external_accounting.sqlite3'
@@ -87,13 +87,16 @@ class Command(BaseCommand):
 
         accounting_systems = ['palladium', 'quickbooks', 'xero']
         for account_user_id in external_users:
-            AccountMapping.objects.update_or_create(
+            mapping, _ = AccountMapping.objects.update_or_create(
                 account_user_id=str(account_user_id),
                 defaults={
-                    'device_access_id': INITIAL_ACCOUNT_MAPPINGS.get(str(account_user_id)),
                     'accounting_system': random.choice(accounting_systems),
                 },
             )
+
+            seeded_access_id = INITIAL_ACCOUNT_MAPPINGS.get(str(account_user_id))
+            if seeded_access_id:
+                AccessId.objects.update_or_create(access_id=seeded_access_id, defaults={'mapping': mapping})
 
         # Ensure MappingModalState record exists
         MappingModalState.objects.get_or_create(id=1, defaults={'state': 'closed'})

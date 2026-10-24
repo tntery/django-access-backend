@@ -4,12 +4,137 @@ import tempfile
 from contextlib import closing
 from pathlib import Path
 
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
+from django.urls import reverse
+from django.utils import timezone
 
 
-from .models import AccessEventLog, AccountMapping, MappingModalState, PendingAccountMapping, Setting
-from .views import ACCOUNT_MAPPING_PAGE_SIZE, EXTERNAL_ACCOUNTING_DB_NAME, get_test_users
+from .models import AccessControlDevice, AccessEventLog, AccessId, AccountMapping, MappingModalState, PendingAccountMapping, Setting, SystemMetadata
+from .views import ACCOUNT_MAPPING_PAGE_SIZE, EXTERNAL_ACCOUNTING_DB_NAME, MAPPING_EVENT_PAGE_SIZE, get_test_users
+
+
+class AccountMappingDetailViewTests(TestCase):
+	def setUp(self):
+		self.user = get_user_model().objects.create_user(username='detail-operator')
+		self.client.force_login(self.user)
+		self.mapping = AccountMapping.objects.create(
+			account_user_id='account/100',
+			first_name='Detail',
+			last_name='User',
+			narration='Member details',
+			usd_balance='0.00',
+			zwg_balance='-15.25',
+			accounting_group='main_bar',
+		)
+		self.url = reverse('account_mapping_detail', args=[self.mapping.pk])
+
+	def test_detail_requires_login(self):
+		self.client.logout()
+		response = self.client.get(self.url)
+		self.assertRedirects(response, f"{reverse('login')}?next={self.url}")
+
+	def test_detail_returns_404_for_missing_mapping(self):
+		response = self.client.get(reverse('account_mapping_detail', args=[self.mapping.pk + 1]))
+		self.assertEqual(response.status_code, 404)
+
+	def test_detail_displays_account_and_empty_states_without_metadata(self):
+		response = self.client.get(self.url)
+		self.assertEqual(response.status_code, 200)
+		self.assertTemplateUsed(response, 'access/mapping_detail.html')
+		for text in (
+			'Member details', 'account/100', 'Detail', 'User', 'Palladium',
+			'Main Bar', '0.00', '-15.25', 'Not Connected',
+			'No access IDs linked to this mapping.',
+			'No access events recorded for this mapping.',
+		):
+			self.assertContains(response, text)
+		self.assertFalse(response.context['connected'])
+		self.assertEqual(response.context['event_stats'], {'total': 0, 'granted': 0, 'rejected': 0})
+		self.assertIsNone(response.context['latest_event'])
+
+	def test_detail_displays_all_connections_and_device_statuses(self):
+		device = AccessControlDevice.objects.create(
+			device_id='reader-100', alias='Front door', location='Reception',
+			last_sync_at=timezone.now(),
+		)
+		inactive = AccessControlDevice.objects.create(device_id='reader-101', is_active=False)
+		AccessId.objects.create(mapping=self.mapping, access_id='card-100', auth_type='card', access_device=device)
+		AccessId.objects.create(mapping=self.mapping, access_id='bio-100', auth_type='biometric', access_device=inactive)
+		AccessId.objects.create(mapping=self.mapping, access_id='pin-100', auth_type='pin')
+
+		response = self.client.get(self.url)
+		self.assertTrue(response.context['connected'])
+		self.assertEqual(len(response.context['access_ids']), 3)
+		for text in (
+			'Connected', 'card-100', 'bio-100', 'pin-100', 'Card', 'Biometric', 'PIN',
+			'Front door', 'reader-100', 'Reception', 'Active', 'Inactive',
+			'Not assigned', 'Unknown', 'No sync recorded',
+			device.last_sync_at.strftime('%Y-%m-%d'),
+		):
+			self.assertContains(response, text)
+
+	def test_blank_ids_and_missing_balances_do_not_imply_connection_or_zero(self):
+		AccessId.objects.create(mapping=self.mapping, access_id='')
+		AccessId.objects.create(mapping=self.mapping, access_id=None)
+		self.mapping.usd_balance = None
+		self.mapping.zwg_balance = None
+		self.mapping.save()
+		response = self.client.get(self.url)
+		self.assertFalse(response.context['connected'])
+		self.assertContains(response, 'Not Connected')
+		self.assertContains(response, 'Not available', count=4)
+
+	def test_history_uses_recorded_mapping_not_current_access_id_ownership(self):
+		other = AccountMapping.objects.create(account_user_id='other-account')
+		device = AccessControlDevice.objects.create(device_id='event-reader', alias='Event reader')
+		AccessId.objects.create(mapping=self.mapping, access_id='shared-card')
+		reject = AccessEventLog.objects.create(
+			user=self.mapping, device_access_id='old-card', access_status='reject',
+			access_type='one_step_mapping', access_control_device=device,
+		)
+		grant = AccessEventLog.objects.create(
+			user=self.mapping, device_access_id='shared-card', access_status='grant',
+		)
+		AccessEventLog.objects.create(user=other, device_access_id='shared-card', access_status='reject')
+		AccessEventLog.objects.create(device_access_id='shared-card', access_status='reject')
+
+		response = self.client.get(self.url)
+		self.assertEqual(response.context['event_stats'], {'total': 2, 'granted': 1, 'rejected': 1})
+		self.assertEqual(list(response.context['page_obj']), [grant, reject])
+		self.assertEqual(response.context['latest_event'], grant)
+		for text in ('old-card', 'One-Step Mapping Attempt', 'Event reader', 'Unknown device'):
+			self.assertContains(response, text)
+
+	def test_history_paginates_with_stable_order_and_whole_history_counts(self):
+		events = [
+			AccessEventLog.objects.create(user=self.mapping, device_access_id=f'log-{index}', access_status='grant')
+			for index in range(MAPPING_EVENT_PAGE_SIZE + 2)
+		]
+		AccessEventLog.objects.filter(user=self.mapping).update(event_timestamp=timezone.now())
+		response = self.client.get(self.url, {'page': 2})
+		self.assertEqual(response.context['page_obj'].number, 2)
+		self.assertEqual(list(response.context['page_obj']), [events[1], events[0]])
+		self.assertEqual(response.context['event_stats']['total'], MAPPING_EVENT_PAGE_SIZE + 2)
+		self.assertContains(response, '?page=1')
+		for page, expected in [('invalid', 1), ('999', 2)]:
+			with self.subTest(page=page):
+				response = self.client.get(self.url, {'page': page})
+				self.assertEqual(response.context['page_obj'].number, expected)
+
+	def test_mapping_list_links_to_detail(self):
+		SystemMetadata.objects.create()
+		response = self.client.get(reverse('account_mapping_list'))
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, f'href="{self.url}"')
+
+	def test_detail_escapes_external_values(self):
+		self.mapping.narration = '<script>alert("member")</script>'
+		self.mapping.save()
+		response = self.client.get(self.url)
+		self.assertContains(response, '&lt;script&gt;')
+		self.assertNotContains(response, '<script>alert("member")</script>')
 
 
 class ExternalAccountingDbMixin:
@@ -328,3 +453,51 @@ class LoadInitialDataCommandTests(TestCase):
 				self.assertEqual(mapping.device_access_id, '175750')
 				self.assertIn(mapping.accounting_system, {'palladium', 'quickbooks', 'xero'})
 				self.assertEqual(MappingModalState.objects.get(id=1).state, 'closed')
+
+
+class TemplateViewAuthenticationTests(TestCase):
+	def setUp(self):
+		self.user = get_user_model().objects.create_user(
+			username='admin_user',
+			password='StrongTestPass123!',
+		)
+
+	def test_mapping_list_requires_authentication(self):
+		response = self.client.get('/')
+
+		self.assertEqual(response.status_code, 302)
+		self.assertIn('/login/?next=/', response.url)
+
+	def test_settings_requires_authentication(self):
+		response = self.client.get('/settings/')
+
+		self.assertEqual(response.status_code, 302)
+		self.assertIn('/login/?next=/settings/', response.url)
+
+	def test_viewer_can_access_mappings_but_not_settings(self):
+		self.client.force_login(self.user)
+
+		list_response = self.client.get('/')
+		settings_response = self.client.get('/settings/')
+
+		self.assertEqual(list_response.status_code, 200)
+		self.assertEqual(settings_response.status_code, 403)
+		self.assertContains(list_response, 'admin_user')
+
+	def test_successful_login_shows_welcome_message(self):
+		response = self.client.post(
+			'/login/',
+			data={'username': 'admin_user', 'password': 'StrongTestPass123!'},
+			follow=True,
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'Welcome back, admin_user.')
+
+	def test_logout_shows_info_message(self):
+		self.client.force_login(self.user)
+
+		response = self.client.post('/logout/', follow=True)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'You have been logged out.')
