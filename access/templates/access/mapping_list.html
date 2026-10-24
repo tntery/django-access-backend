@@ -22,6 +22,9 @@
                 Belgravia Sports Club
             </h6>
             <h2 class="h4 mb-1 text-uppercase">User Connections</h2>
+            {% if request.user.is_staff or request.user.is_superuser %}
+            <a href="{% url 'mapping_create' %}" class="btn btn-sm btn-primary my-2">Create local mapping</a>
+            {% endif %}
             <span>
                 <span class="badge bg-secondary">{{ total_users }} Total Users</span>
                 <span class="badge bg-success">{{ connected_access_ids }} Access IDs</span>
@@ -92,6 +95,10 @@
                         {{ mapping_filter.form.account_user_id.label_tag }}
                         {{ mapping_filter.form.account_user_id }}
                     </div>
+                    <div class="col-md-3">
+                        {{ mapping_filter.form.classification.label_tag }}
+                        {{ mapping_filter.form.classification }}
+                    </div>
                     <div class="col-md-2 d-flex gap-2">
                         <button type="submit" class="btn btn-sm btn-primary w-100">Filter</button>
                         <a href="{% url 'account_mapping_list' %}" class="btn btn-sm btn-outline-dark w-100">Clear</a>
@@ -104,7 +111,7 @@
     <section class="table-responsive">
         <table class="table table-responsive  table-striped mt-4 border-top">
             <thead>
-                <tr>
+                <tr class="border">
                     <th>Full Name</th>
                     <th class="text-end pe-5 ps-0">USD Balance</th>
                     <th class="text-end pe-5 ps-0">ZWG Balance</th>
@@ -115,8 +122,12 @@
             </thead>
             <tbody>
                 {% for u in users %}
-                <tr data-accounting-id="{{ u.account_user_id }}" data-full-name="{{ u.get_full_name }}">
-                    <td><a href="{% url 'account_mapping_detail' u.pk %}">{{ u.get_full_name }}</a></td>
+                <tr data-accounting-id="{{ u.account_user_id }}" data-full-name="{{ u.get_full_name }}" class="border">
+                    <td>
+                        <a href="{% url 'account_mapping_detail' u.pk %}" class="link-dark">{{ u.get_full_name }}</a>
+                        <span class="badge bg-info text-dark">{{ u.get_classification_display }}</span>
+                        {% if u.is_manual %}<span class="badge bg-secondary">Local</span>{% endif %}
+                    </td>
                     <td class="text-end pe-5 ps-0">{{ u.usd_balance }}</td>
                     <td class="text-end pe-5 ps-0">{{ u.zwg_balance }}</td>
                     <td>

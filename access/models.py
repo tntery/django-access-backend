@@ -5,6 +5,7 @@ class AccountMapping(models.Model):
     """Model to store the mapping between access control device IDs and accounting system IDs"""
 
     ACCOUNTING_SYSTEM_CHOICES = (
+        ("local", "Local"),
         ("palladium", "Palladium"),
         ("quickbooks", "QuickBooks"),
         ("xero", "Xero"),
@@ -18,15 +19,18 @@ class AccountMapping(models.Model):
         ("grant", "Grant"),
         ("reject", "Reject"),
     )
+    CLASSIFICATION_CHOICES = (("member", "Member"), ("staff", "Staff"))
     account_user_id = models.CharField(max_length=100, unique=True, help_text="Unique identifier from accounting system")
     first_name = models.CharField(max_length=100, null=True, blank=True, help_text="User's first name")
     last_name = models.CharField(max_length=100, null=True, blank=True, help_text="User's last name")
     narration = models.CharField(max_length=100, null=True, blank=True, help_text="User's description/narration from accounting system")
-    usd_balance = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="User's balance in USD")
-    zwg_balance = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="User's balance in ZWG")
+    usd_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True, help_text="User's balance in USD")
+    zwg_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True, help_text="User's balance in ZWG")
     accounting_system = models.CharField(max_length=50, choices=ACCOUNTING_SYSTEM_CHOICES, default="palladium", help_text="Accounting system name")
     accounting_group = models.CharField(max_length=100, null=True, blank=True, choices=ACCOUNTING_GROUP_CHOICES, help_text="Accounting group or category for the user")
     access_override = models.CharField(max_length=6, choices=ACCESS_OVERRIDE_CHOICES, default="auto", help_text="Local access decision; external user syncs do not change this value.")
+    is_manual = models.BooleanField(default=False, editable=False, help_text="Locally managed mapping, protected from external sync.")
+    classification = models.CharField(max_length=6, choices=CLASSIFICATION_CHOICES, default="member")
     created_at = models.DateTimeField(auto_now_add=True)
     last_updated_at = models.DateTimeField(auto_now=True)
 
@@ -60,13 +64,13 @@ class AccountMapping(models.Model):
     @property
     def device_access_id(self):
         """Backwards-compatible accessor for the first linked access ID."""
-        first_access = self.access_ids.order_by('created_at').first()
+        first_access = self.access_ids.filter(is_enabled=True).order_by('created_at').first()
         return first_access.access_id if first_access else None
 
     @property
     def has_access_id(self):
         """True when at least one access ID is linked to this account."""
-        return self.access_ids.filter(access_id__isnull=False).exclude(access_id='').exists()
+        return self.access_ids.filter(is_enabled=True, access_id__isnull=False).exclude(access_id='').exists()
 
 class AccessId(models.Model):
     AUTH_TYPES = (
@@ -79,11 +83,19 @@ class AccessId(models.Model):
     access_device = models.ForeignKey('AccessControlDevice', related_name='access_ids', on_delete=models.SET_NULL, null=True, blank=True, help_text="The access control device this ID is associated with")
     auth_type = models.CharField(max_length=50, null=True, blank=True, choices=AUTH_TYPES, help_text="Type of authentication (e.g., card, biometric)")
     mapping = models.ForeignKey(AccountMapping, on_delete=models.SET_NULL, null=True, blank=True, help_text="Linked account mapping if available", related_name="access_ids")
+    is_manual = models.BooleanField(default=False, editable=False, help_text="Locally managed connection, protected from external sync.")
+    is_enabled = models.BooleanField(default=True, help_text="Disabled IDs are retained to prevent automatic reconnection.")
     created_at = models.DateTimeField(auto_now_add=True)
     last_updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ("access_id", "access_device")
+        constraints = [
+            models.UniqueConstraint(
+                fields=['access_id'], condition=models.Q(access_device__isnull=True),
+                name='unique_shared_access_id',
+            ),
+        ]
 
     def __str__(self):
         mapped_user = self.mapping.account_user_id if self.mapping else None

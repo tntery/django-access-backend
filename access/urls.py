@@ -7,6 +7,10 @@ from .views import (
     account_mapping_list_view,
     account_mapping_detail_view,
     account_mapping_override_view,
+    mapping_create_view,
+    mapping_edit_view,
+    mapping_access_id_view,
+    mapping_access_id_remove_view,
     set_modal_state_view,
     api_account_mapping_view,
     settings_view,
@@ -19,7 +23,12 @@ urlpatterns = [
 
     # UI views
     path('', account_mapping_list_view, name='account_mapping_list'),
+    path('mappings/new/', mapping_create_view, name='mapping_create'),
     path('mappings/<int:pk>/', account_mapping_detail_view, name='account_mapping_detail'),
+    path('mappings/<int:pk>/edit/', mapping_edit_view, name='mapping_edit'),
+    path('mappings/<int:pk>/access-ids/new/', mapping_access_id_view, name='mapping_access_id_create'),
+    path('mappings/<int:pk>/access-ids/<int:access_pk>/edit/', mapping_access_id_view, name='mapping_access_id_edit'),
+    path('mappings/<int:pk>/access-ids/<int:access_pk>/remove/', mapping_access_id_remove_view, name='mapping_access_id_remove'),
     path('mappings/<int:pk>/access-override/', account_mapping_override_view, name='account_mapping_override'),
     path('settings/', settings_view, name='settings'),
     

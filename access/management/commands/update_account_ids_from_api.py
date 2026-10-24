@@ -117,7 +117,7 @@ class Command(BaseCommand):
 
             # Find matching AccountMapping records
             matching_mappings = AccountMapping.objects.filter(
-                account_user_id=card_id
+                account_user_id=card_id, is_manual=False,
             )
 
             if matching_mappings.exists():

@@ -14,6 +14,13 @@
         <div>
             <h1 class="h4 text-break">{{ mapping.get_full_name }}</h1>
             <p class="text-muted mb-0">Mapping details for account {{ mapping.account_user_id }}</p>
+            <span class="badge bg-info text-dark">{{ mapping.get_classification_display }}</span>
+            <span class="badge bg-secondary">{% if mapping.is_manual %}Local mapping{% else %}External mapping{% endif %}</span>
+            {% if request.user.is_staff or request.user.is_superuser %}
+            <a href="{% url 'mapping_edit' mapping.pk %}" class="btn btn-sm btn-outline-primary ms-2">
+                {% if mapping.is_manual %}Edit mapping{% else %}Edit classification{% endif %}
+            </a>
+            {% endif %}
         </div>
         {% if connected %}
         <span class="badge bg-success">Connected</span>
@@ -25,7 +32,7 @@
     <section class="card mb-4" aria-labelledby="access-override-heading">
         <div class="card-body">
             <h2 id="access-override-heading" class="h5">Mapping access decision</h2>
-            <p class="text-muted">Auto uses authorization rules. Manual Grant or Reject overrides those rules for every linked access ID and survives external syncs. Inactive devices still reject access. Offline devices receive changes on their next sync.</p>
+            <p class="text-muted">Auto grants access to Staff; Members follow authorization rules. Manual Grant or Reject overrides those rules for every linked access ID and survives external syncs. Inactive devices and disconnected IDs still reject access. Offline devices receive changes on their next sync.</p>
             {% include "access/includes/access_override.html" with mapping=mapping %}
         </div>
     </section>
@@ -89,6 +96,9 @@
 
     <section class="mb-4" aria-labelledby="connections-heading">
         <h2 id="connections-heading" class="h5">Linked access IDs</h2>
+        {% if request.user.is_staff or request.user.is_superuser %}
+        <a href="{% url 'mapping_access_id_create' mapping.pk %}" class="btn btn-sm btn-primary mb-2">Connect access ID</a>
+        {% endif %}
         <p class="text-muted">Connected means an access ID is linked, not that access is granted. Device active/inactive status is configured status, not a live connectivity check.</p>
         <div class="table-responsive">
             <table class="table table-striped align-middle">
@@ -100,6 +110,7 @@
                         <th scope="col">Location</th>
                         <th scope="col">Device status</th>
                         <th scope="col">Last successful sync</th>
+                        <th scope="col">Management</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -123,13 +134,35 @@
                         <td>No sync recorded</td>
                         {% endif %}
                         {% endwith %}
+                        <td>
+                            <span class="badge bg-secondary">{% if access_id.is_manual %}Manual{% else %}Automatic{% endif %}</span>
+                            {% if request.user.is_staff or request.user.is_superuser %}
+                            <a class="btn btn-sm btn-outline-primary my-1" href="{% url 'mapping_access_id_edit' mapping.pk access_id.pk %}">Edit</a>
+                            <form method="post" action="{% url 'mapping_access_id_remove' mapping.pk access_id.pk %}"
+                                  data-confirm="Disconnect this access ID? External sync will not reconnect it. Offline devices receive changes on their next sync.">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Disconnect</button>
+                            </form>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="6" class="text-center text-muted">No access IDs linked to this mapping.</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted">No access IDs linked to this mapping.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+        {% if disconnected_ids %}
+        <details class="border rounded p-3">
+            <summary>Protected disconnections</summary>
+            <p class="text-muted mt-2">These IDs are disabled and cannot be reconnected by sync. To reconnect, use Connect access ID with the same ID and device.</p>
+            <ul class="mb-0">
+                {% for access_id in disconnected_ids %}
+                <li>{{ access_id.access_id }} &mdash; {% if access_id.access_device %}{{ access_id.access_device.alias|default:access_id.access_device.device_id }}{% else %}Shared ID{% endif %}</li>
+                {% endfor %}
+            </ul>
+        </details>
+        {% endif %}
     </section>
 
     <section aria-labelledby="events-heading">

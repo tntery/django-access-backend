@@ -4,9 +4,9 @@ from django.contrib import admin
 from .models import AccessDeviceSyncLog, AccessId, AccessControlDevice, AccountMapping, PendingAccountMapping, AccessEventLog, MappingModalState, Setting, SystemMetadata, TamperEventLog
 
 class AccessIdAdmin(admin.ModelAdmin):
-    list_display = ('access_id', 'auth_type', 'access_device__alias', 'mapping', 'created_at', 'last_updated_at')
+    list_display = ('access_id', 'auth_type', 'access_device__alias', 'mapping', 'is_manual', 'is_enabled', 'created_at', 'last_updated_at')
     search_fields = ('access_id', 'auth_type', 'mapping__first_name', 'mapping__last_name', 'mapping__narration')
-    list_filter = ('auth_type', 'created_at', 'last_updated_at')
+    list_filter = ('auth_type', 'is_manual', 'is_enabled', 'created_at', 'last_updated_at')
 
 class AccessControlDeviceAdmin(admin.ModelAdmin):
     list_display = ('device_id', 'alias', 'location', 'is_active', 'last_sync_at')
@@ -14,9 +14,9 @@ class AccessControlDeviceAdmin(admin.ModelAdmin):
     list_filter = ('is_active', 'last_sync_at')
 
 class AccountMappingAdmin(admin.ModelAdmin):
-    list_display = ('account_user_id', 'narration', 'usd_balance', 'zwg_balance', 'access_override', 'created_at', 'last_updated_at')
+    list_display = ('account_user_id', 'narration', 'classification', 'is_manual', 'usd_balance', 'zwg_balance', 'access_override', 'created_at', 'last_updated_at')
     search_fields = ('account_user_id', 'first_name', 'last_name', 'narration', 'accounting_system')
-    list_filter = ('accounting_system', 'access_override', 'created_at', 'last_updated_at')
+    list_filter = ('accounting_system', 'classification', 'is_manual', 'access_override', 'created_at', 'last_updated_at')
 
 class AccessEventLogAdmin(admin.ModelAdmin):
     list_display = ('device_access_id', 'user__narration', 'access_type', 'access_status', 'decision_type', 'access_control_device__alias','event_timestamp')

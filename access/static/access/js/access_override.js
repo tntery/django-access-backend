@@ -6,6 +6,14 @@ document.querySelectorAll('.access-override-form').forEach((form) => {
         radio.addEventListener('change', () => form.requestSubmit());
     });
 
+    document.querySelectorAll('form[data-confirm]').forEach((form) => {
+        form.addEventListener('submit', (event) => {
+            if (!window.confirm(form.dataset.confirm)) {
+                event.preventDefault();
+            }
+        });
+    });
+
     form.addEventListener('submit', (event) => {
         const selected = radios.find((radio) => radio.checked);
         if (selected.value === form.dataset.current) {

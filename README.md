@@ -131,6 +131,52 @@ associated with the mapping recorded at the time of the attempt, even if an ID i
 subsequently disconnected or reassigned. Unattributed events are not matched by
 access ID, to avoid showing another account's history.
 
+### Manual Mappings and Access IDs
+
+Staff and superusers can select **Create local mapping** on the list. A local
+mapping receives a generated `local-<uuid>` identifier and uses the Local accounting
+system; it does not need an external account. Enter a display name or first/last
+name, choose **Member** (the default) or **Staff**, and optionally set balances and
+an access override. Local mappings can be edited from their detail page.
+
+Every mapping, including an externally synced mapping, supports **Connect access
+ID**, **Edit**, and **Disconnect** on its detail page. Enter an ID and authentication
+type (Card, Biometric, PIN, or Other). Leaving the device blank makes the manual
+ID shared; choosing a device limits it to that device. Existing unassigned IDs
+can be connected. An active ID cannot be silently reassigned to another mapping:
+disconnect it first, then explicitly connect it to the new mapping.
+
+Manual mappings and connections are marked separately from automatically imported
+records. External user sync continues updating external profile/balance fields,
+but never overwrites a local mapping, manual connection, classification, or access
+override. External card collisions with manual records are skipped and logged.
+The stale-account cleanup command also preserves local mappings and mappings with
+manually managed connections/disconnections.
+
+Disconnecting retains a disabled, manually protected record instead of deleting
+the identifier. Editing an ID retains a protected disconnection for the previous
+identifier/scope, so a later sync cannot recreate the old connection. Promoting
+an ID to shared replaces its old device row with the shared protected row;
+an explicit shared reconnection also supersedes old disabled device-specific rows.
+**Protected disconnections** are visible on the detail page. Reconnect explicitly
+using the same ID and device. Disabled IDs reject access even for Staff, configured
+staff-ID exceptions, and manual Grant overrides. Historical access events remain
+unchanged.
+
+The Staff/Member classification is editable locally on both local and external
+mappings, shown in the list and detail page, and available as a list filter.
+**Staff grants access in Auto**, without a balance check; **Member follows the
+application's automatic rules**. Explicit Grant/Reject overrides still take
+precedence. Changing classification does not make someone a Django admin: only
+authenticated Django staff/superusers may use these management controls. Updates
+use CSRF-protected forms and browser confirmation.
+
+The migration defaults existing mappings to Member/external and existing IDs to
+enabled/automatic; it does not guess which older records were entered manually.
+Editing a connection in the UI explicitly takes manual ownership. Shared IDs are
+now unique even when no device is assigned; installations with duplicate shared
+IDs must resolve those duplicates before applying the migration.
+
 ### Mapping Access Overrides
 
 Each mapping has an `access_override` value: **Auto** (the default), **Grant**, or
@@ -141,9 +187,9 @@ cannot change it.
 
 Grant and Reject are labeled **Manual** and take precedence over automatic
 authorization rules and staff-ID exceptions for all linked access IDs, including
-one-step mapping attempts. Auto restores existing automatic behavior. Inactive
-devices still reject access. External user/balance syncs never modify this local
-field.
+one-step mapping attempts. Auto uses the mapping's Staff/Member classification and
+automatic rules. Inactive devices and disconnected IDs still reject access.
+External user/balance syncs never modify this local field.
 
 Live decisions read the current mapping. Device cache downloads rebuild decisions
 from current database state on every request, rather than trusting a process-local
@@ -167,14 +213,19 @@ API:
 - `POST /api/access/<device_serial_number>` - submit an access event
 - `GET /api/access/<device_serial_number>` - download decisions for device caching
 - `POST /mappings/<pk>/access-override/` - staff-only, CSRF-protected override update (`access_override=auto|grant|reject`)
+- `/mappings/new/` - staff-only local mapping creation form
+- `/mappings/<pk>/edit/` - local mapping edit or external mapping classification form
+- `/mappings/<pk>/access-ids/new/` - connect an access ID
+- `/mappings/<pk>/access-ids/<access_pk>/edit/` - edit a connection
+- `POST /mappings/<pk>/access-ids/<access_pk>/remove/` - disconnect and protect an ID
 - `POST /api/modal-state` - set modal state (`open` or `closed`)
 - `GET /api/mappings/pending` - fetch the pending scanned device ID
-- `POST /api/mappings` - create or update a mapping
-- `DELETE /api/mappings/<account_user_id>` - unmap a user
+- `POST /api/mappings` - staff-only, CSRF-protected connection update
+- `DELETE /api/mappings/<account_user_id>` - staff-only, CSRF-protected disconnection of all IDs
 
 ## Authorization Logic
 
-For mappings set to Auto, the singleton `Setting` model controls authorization:
+For Member mappings set to Auto, the singleton `Setting` model controls authorization:
 
 - `grant_all`: mapped users are granted access
 - `reject_all`: mapped users are rejected
@@ -182,7 +233,8 @@ For mappings set to Auto, the singleton `Setting` model controls authorization:
 - `check_zwg_balance`: check the ZWG balance against `zwg_balance_threshold`
 - `check_usd_or_zwg_balance`: either balance may meet its corresponding threshold
 
-Manual mapping decisions take precedence over these rules. Unmapped IDs are
+Staff mappings in Auto are granted access. Manual mapping decisions take precedence
+over classification and automatic rules. Disconnected IDs reject access. Unmapped IDs are
 rejected unless they are configured staff-ID exceptions. The existing one-step
 mapping flow grants valid mapping attempts in Auto mode.
 
@@ -205,10 +257,10 @@ Run the critical-path test suite with:
 python manage.py test access.tests
 ```
 
-Run the mapping override and detail-page tests with:
+Run the manual-management, mapping override, and detail-page tests with:
 
 ```powershell
-python manage.py test access.test_overrides access.tests.AccountMappingDetailViewTests
+python manage.py test access.test_manual_management access.test_overrides access.tests.AccountMappingDetailViewTests
 ```
 
 The current tests cover:

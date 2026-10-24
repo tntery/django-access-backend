@@ -1,0 +1,31 @@
+{% extends "access/includes/base.html" %}
+{% load crispy_forms_tags %}
+{% load static %}
+
+{% block title %}{{ heading }} | Smart Access Control{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <h1 class="h4">{{ heading }}</h1>
+    {% if mapping %}
+    <p>{{ mapping.get_full_name }} ({{ mapping.account_user_id }})</p>
+    {% endif %}
+    <p class="text-muted">Manual mappings and access ID changes are protected from external sync.
+        Staff grants access in Auto; an explicit Grant or Reject still takes precedence.
+        Offline devices receive changes on their next sync.</p>
+    <form method="post" class="col-lg-8" data-confirm="Save these mapping changes? Staff classification grants access in Auto. Offline devices receive changes on their next sync.">
+        {% csrf_token %}
+        {{ form|crispy }}
+        <button type="submit" class="btn btn-primary">Save</button>
+        {% if mapping %}
+        <a href="{% url 'account_mapping_detail' mapping.pk %}" class="btn btn-outline-secondary">Cancel</a>
+        {% else %}
+        <a href="{% url 'account_mapping_list' %}" class="btn btn-outline-secondary">Cancel</a>
+        {% endif %}
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'access/js/access_override.js' %}"></script>
+{% endblock %}

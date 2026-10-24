@@ -7,11 +7,12 @@ from requests.exceptions import RequestException, HTTPError
 from http import HTTPStatus
 from contextlib import closing
 from pathlib import Path
+from uuid import uuid4
 
 from django.conf import settings
 from django.core.paginator import Paginator
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.contrib.auth.decorators import login_required
@@ -19,11 +20,11 @@ from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
+from django.views.decorators.http import require_http_methods, require_POST
 from .filters import AccountMappingFilter
 from .models import AccessControlDevice, AccessDeviceSyncLog, AccessEventLog, TamperEventLog, AccessId, AccountMapping, PendingAccountMapping, MappingModalState, Setting, SystemMetadata
-from .forms import SettingForm
+from .forms import ManualAccessIdForm, ManualMappingForm, MappingClassificationForm, SettingForm
 
 EXTERNAL_ACCOUNTING_DB_NAME = 'external_accounting.sqlite3'
 ACCOUNT_MAPPING_PAGE_SIZE = 25
@@ -72,9 +73,136 @@ def _find_access_id(device_access_id, device):
     entries = AccessId.objects.select_related('mapping').filter(access_id=device_access_id)
     if device:
         return entries.filter(access_device=device).first() or entries.filter(
-            Q(auth_type='card') | Q(access_device__isnull=True)
+            Q(auth_type='card', is_manual=False) | Q(access_device__isnull=True)
         ).first()
-    return entries.first()
+    return entries.filter(Q(is_manual=False) | Q(access_device__isnull=True)).first()
+
+
+def _require_staff(request):
+    if not (request.user.is_staff or request.user.is_superuser):
+        raise PermissionDenied
+
+
+def _refresh_access_cache():
+    global access_decisions_list
+    access_decisions_list = get_access_decisions_list()
+
+
+@login_required
+@require_http_methods(['GET', 'POST'])
+def mapping_create_view(request):
+    _require_staff(request)
+    form = ManualMappingForm(request.POST if request.method == 'POST' else None)
+    if request.method == 'POST' and form.is_valid():
+        with transaction.atomic():
+            mapping = form.save(commit=False)
+            mapping.account_user_id = f'local-{uuid4().hex}'
+            mapping.accounting_system = 'local'
+            mapping.is_manual = True
+            mapping.save()
+            _refresh_access_cache()
+        messages.success(request, 'Local mapping created. You can now connect access IDs.')
+        return redirect('account_mapping_detail', pk=mapping.pk)
+    return render(request, 'access/mapping_form.html', {
+        'form': form, 'heading': 'Create local mapping',
+    })
+
+
+@login_required
+@require_http_methods(['GET', 'POST'])
+def mapping_edit_view(request, pk):
+    _require_staff(request)
+    mapping = get_object_or_404(AccountMapping, pk=pk)
+    form_class = ManualMappingForm if mapping.is_manual else MappingClassificationForm
+    form = form_class(request.POST if request.method == 'POST' else None, instance=mapping)
+    if request.method == 'POST' and form.is_valid():
+        with transaction.atomic():
+            mapping = form.save(commit=False)
+            mapping.save(update_fields=[*form.Meta.fields, 'last_updated_at'])
+            _refresh_access_cache()
+        messages.success(request, 'Mapping updated.')
+        return redirect('account_mapping_detail', pk=mapping.pk)
+    return render(request, 'access/mapping_form.html', {
+        'form': form, 'mapping': mapping,
+        'heading': 'Edit local mapping' if mapping.is_manual else 'Edit mapping classification',
+    })
+
+
+@login_required
+@require_http_methods(['GET', 'POST'])
+def mapping_access_id_view(request, pk, access_pk=None):
+    _require_staff(request)
+    mapping = get_object_or_404(AccountMapping, pk=pk)
+    entry = get_object_or_404(AccessId, pk=access_pk, mapping=mapping, is_enabled=True) if access_pk else None
+    form = ManualAccessIdForm(
+        request.POST if request.method == 'POST' else None, mapping=mapping, instance=entry,
+    )
+    if request.method == 'POST' and form.is_valid():
+        try:
+            with transaction.atomic():
+                AccountMapping.objects.select_for_update().get(pk=mapping.pk)
+                list(AccessId.objects.select_for_update().filter(
+                    access_id=form.cleaned_data['access_id'],
+                ))
+                if entry:
+                    entry = get_object_or_404(
+                        AccessId.objects.select_for_update(), pk=entry.pk, mapping=mapping, is_enabled=True,
+                    )
+                form = ManualAccessIdForm(request.POST, mapping=mapping, instance=entry)
+                if not form.is_valid():
+                    return render(request, 'access/mapping_form.html', {
+                        'form': form, 'mapping': mapping,
+                        'heading': 'Edit access ID' if entry else 'Connect access ID',
+                    })
+                values = form.cleaned_data
+                identity = {'access_id': values['access_id'], 'access_device': values['access_device']}
+                if entry and (entry.access_id, entry.access_device_id) != (
+                    values['access_id'], values['access_device'].pk if values['access_device'] else None
+                ):
+                    if entry.access_id == values['access_id'] and values['access_device'] is None:
+                        # The new shared manual row protects this ID on every device.
+                        entry.delete()
+                    else:
+                        entry.is_enabled = False
+                        entry.is_manual = True
+                        entry.save(update_fields=['is_enabled', 'is_manual', 'last_updated_at'])
+                if values['access_device'] is None:
+                    # A shared reconnection supersedes disabled device-specific scopes.
+                    AccessId.objects.filter(
+                        access_id=values['access_id'], is_enabled=False, access_device__isnull=False,
+                    ).delete()
+                AccessId.objects.update_or_create(
+                    **identity,
+                    defaults={'mapping': mapping, 'auth_type': values['auth_type'],
+                              'is_manual': True, 'is_enabled': True},
+                )
+                _refresh_access_cache()
+        except IntegrityError:
+            logger.exception('Conflicting access ID while editing mapping %s', mapping.pk)
+            form.add_error(None, 'This access ID was changed by another operation. Reload and try again.')
+        else:
+            messages.success(request, 'Access ID connected and protected from external sync.')
+            return redirect('account_mapping_detail', pk=mapping.pk)
+    return render(request, 'access/mapping_form.html', {
+        'form': form, 'mapping': mapping,
+        'heading': 'Edit access ID' if entry else 'Connect access ID',
+    })
+
+
+@login_required
+@require_POST
+def mapping_access_id_remove_view(request, pk, access_pk):
+    _require_staff(request)
+    with transaction.atomic():
+        entry = get_object_or_404(
+            AccessId.objects.select_for_update(), pk=access_pk, mapping_id=pk, is_enabled=True,
+        )
+        entry.is_enabled = False
+        entry.is_manual = True
+        entry.save(update_fields=['is_enabled', 'is_manual', 'last_updated_at'])
+        _refresh_access_cache()
+    messages.success(request, 'Access ID disconnected. External sync will not reconnect it.')
+    return redirect('account_mapping_detail', pk=pk)
 
 
 def get_test_users():
@@ -139,8 +267,8 @@ def account_mapping_list_view(request):
 
     last_updated = AccountMapping.objects.order_by('-last_updated_at').first()
     system_metadata = SystemMetadata.objects.first()    
-    mapping_last_updated_at = system_metadata.last_successful_mapping_update_at
-    access_device_last_synced_at = system_metadata.last_device_sync_at
+    mapping_last_updated_at = system_metadata.last_successful_mapping_update_at if system_metadata else None
+    access_device_last_synced_at = system_metadata.last_device_sync_at if system_metadata else None
 
     last_access_event = AccessEventLog.objects.order_by('-event_timestamp').first()
     last_access_event_timestamp = last_access_event.event_timestamp if last_access_event else None
@@ -151,9 +279,9 @@ def account_mapping_list_view(request):
         {
             "users": page_obj,
             "total_users": mapping_filter.qs.count(),
-            "connected_users": mapping_filter.qs.filter(access_ids__access_id__isnull=False).exclude(access_ids__access_id='').count(),
-            "connected_access_ids": AccessId.objects.filter(mapping__in=mapping_filter.qs, access_id__isnull=False).exclude(access_id='').count(),
-            "not_connected_users": mapping_filter.qs.filter(access_ids__access_id__isnull=True).count(),
+            "connected_users": mapping_filter.qs.filter(access_ids__is_enabled=True, access_ids__access_id__gt='').distinct().count(),
+            "connected_access_ids": AccessId.objects.filter(mapping__in=mapping_filter.qs, is_enabled=True, access_id__gt='').count(),
+            "not_connected_users": mapping_filter.qs.exclude(pk__in=AccessId.objects.filter(is_enabled=True, access_id__gt='', mapping__isnull=False).values('mapping_id')).count(),
             "page_obj": page_obj,
             "mapping_filter": mapping_filter,
             "query_string": query_string,
@@ -169,7 +297,7 @@ def account_mapping_list_view(request):
 def account_mapping_detail_view(request, pk):
     """Display a mapping's current connections and recorded access history."""
     mapping = get_object_or_404(AccountMapping, pk=pk)
-    access_ids = mapping.access_ids.select_related('access_device').order_by('created_at', 'pk')
+    access_ids = mapping.access_ids.filter(is_enabled=True).select_related('access_device').order_by('created_at', 'pk')
     events = AccessEventLog.objects.filter(user=mapping).select_related('access_control_device').order_by('-event_timestamp', '-pk')
     event_stats = events.aggregate(
         total=Count('pk'),
@@ -184,6 +312,7 @@ def account_mapping_detail_view(request, pk):
         {
             'mapping': mapping,
             'access_ids': access_ids,
+            'disconnected_ids': mapping.access_ids.filter(is_enabled=False).select_related('access_device'),
             'connected': mapping.has_access_id,
             'event_stats': event_stats,
             'latest_event': events.first(),
@@ -290,10 +419,13 @@ def get_access_decisions_list():
     settings = Setting.get_solo()
     staff_access_decission_list = []
     for staff_id in STAFF_USER_IDS:
-        entry = AccessId.objects.select_related('mapping').filter(access_id=str(staff_id)).first()
+        entry = AccessId.objects.select_related('mapping').filter(
+            Q(auth_type='card', is_manual=False) | Q(access_device__isnull=True),
+            access_id=str(staff_id),
+        ).first()
         staff_access_decission_list.append({
             "device_access_id": str(staff_id),
-            "access": get_access_decision(str(staff_id), entry.mapping if entry else None, settings),
+            "access": _access_id_decision(entry, settings) if entry else get_access_decision(str(staff_id), None, settings),
         })
     access_decission_list.append({"staff": staff_access_decission_list})  # Add staff access decisions to the main access decisions list under a separate key for clarity and to avoid mixing with regular user access decisions, and to allow for easy filtering of staff access decisions in the access control device if needed
 
@@ -304,10 +436,10 @@ def get_access_decisions_list():
     # append for all access ids of auth type card
     card_access_decission_list = []
     for access_id_entry in AccessId.objects.select_related('mapping').filter(
-        Q(auth_type="card") | Q(access_device__isnull=True)
+        Q(auth_type="card", is_manual=False) | Q(access_device__isnull=True)
     ).exclude(access_id__isnull=True).exclude(access_id=''):
         mapping = access_id_entry.mapping
-        access_decision = get_access_decision(access_id_entry.access_id, mapping, settings)
+        access_decision = _access_id_decision(access_id_entry, settings)
         card_access_decission_list.append({
             "device_access_id": access_id_entry.access_id,
             "access": access_decision
@@ -322,7 +454,7 @@ def get_access_decisions_list():
             access_id__isnull=True
         ).exclude(access_id=''):
             mapping = access_id_entry.mapping
-            access_decision = get_access_decision(access_id_entry.access_id, mapping, settings)
+            access_decision = _access_id_decision(access_id_entry, settings)
             device_biometric_access_decission_list.append({
                 "device_access_id": access_id_entry.access_id,
                 "access": access_decision
@@ -338,11 +470,19 @@ def get_access_decisions_list():
     return access_decission_list
 
 
+def _access_id_decision(entry, settings):
+    if not entry.is_enabled:
+        return "REJECT"
+    return get_access_decision(entry.access_id, entry.mapping, settings)
+
+
 def get_access_decision(device_access_id, mapping, settings):
     """Return access decision based on the authorization flow setting and relevant balance thresholds if applicable"""
     
     if mapping and mapping.manual_access_decision:
         return mapping.manual_access_decision
+    if mapping and mapping.classification == 'staff':
+        return "GRANT"
     if str(device_access_id) in STAFF_USER_IDS:
         return "GRANT"
     if not mapping:
@@ -477,12 +617,18 @@ def access_event_view(request, device_serial_number=None):
                 mapping = access_id_entry.mapping if access_id_entry else None
 
                 # map wiegand id to the same user if there is a mapping for the card uid and grand access, otherwise reject access
-                if access_id_entry and mapping and wiegand_id:
-                    AccessId.objects.update_or_create(access_id=wiegand_id, defaults={
-                        "auth_type": "biometric",
-                        "mapping": mapping
-                        }
-                    )
+                if access_id_entry and access_id_entry.is_enabled and mapping and wiegand_id:
+                    existing = _find_access_id(wiegand_id, access_control_device)
+                    if existing and (
+                        not existing.is_enabled or existing.mapping_id != mapping.pk
+                    ):
+                        _log_access_event(wiegand_id, "reject", mapping, access_type="one_step_mapping", access_control_device=access_control_device)
+                        return JsonResponse({"access": "REJECT"}, status=HTTPStatus.OK)
+                    if not existing:
+                        AccessId.objects.create(
+                            access_id=wiegand_id, auth_type="biometric", mapping=mapping,
+                            access_device=access_control_device,
+                        )
                     decision = mapping.manual_access_decision or "GRANT"
                     _log_access_event(wiegand_id, decision.lower(), mapping, access_type="one_step_mapping", access_control_device=access_control_device if access_control_device else None)
                     return JsonResponse({"access": decision}, status=HTTPStatus.OK)
@@ -499,7 +645,7 @@ def access_event_view(request, device_serial_number=None):
             mapping = access_id_entry.mapping if access_id_entry else None
 
             settings = Setting.get_solo()
-            access_decision = get_access_decision(device_access_id, mapping, settings)
+            access_decision = _access_id_decision(access_id_entry, settings) if access_id_entry else get_access_decision(device_access_id, None, settings)
 
             _log_access_event(device_access_id, access_decision.lower(), mapping, access_control_device=access_control_device if access_control_device else None)
             return JsonResponse({"access": access_decision}, status=HTTPStatus.OK)
@@ -574,10 +720,12 @@ def handle_get_mappings(request, filter_name=None):
             return JsonResponse({"error": "Invalid filter for GET request. Only 'pending' is supported."}, status=HTTPStatus.BAD_REQUEST)
 
 
+@csrf_protect
 def handle_create_mapping(request, filter_name=None):
     """Handle POST request to create/update mapping between access control user and accounting system user"""
     if filter_name == "update":
         return fetch_external_users()  # Trigger fetch from external system to update user data before updating mapping
+    _require_staff(request)
     
     try:
         data = json.loads(request.body)
@@ -595,15 +743,23 @@ def handle_create_mapping(request, filter_name=None):
         if existing_access and existing_access.mapping_id != mapping.id:
             return JsonResponse({"error": "This device's Access ID is already mapped to another account"}, status=HTTPStatus.BAD_REQUEST)
 
-        AccessId.objects.update_or_create(access_id=device_access_id, defaults={"mapping": mapping})
+        if not device_access_id or not str(device_access_id).strip():
+            return JsonResponse({"error": "Access ID is required"}, status=HTTPStatus.BAD_REQUEST)
+        AccessId.objects.update_or_create(
+            access_id=device_access_id, access_device=None,
+            defaults={"mapping": mapping, "is_manual": True, "is_enabled": True},
+        )
+        _refresh_access_cache()
         PendingAccountMapping.objects.all().delete()
         return JsonResponse({"status": "created"}, status=HTTPStatus.CREATED)
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=HTTPStatus.BAD_REQUEST)
 
 
+@csrf_protect
 def handle_delete_mapping(request, filter_name=None):
     """Handle DELETE request to remove mapping between access control user and accounting system user (set device_access_id to null for the given account_user_id)"""
+    _require_staff(request)
     if filter_name is None:
         return JsonResponse({"error": "account_user_id is required for DELETE request"}, status=HTTPStatus.BAD_REQUEST) 
 
@@ -611,7 +767,8 @@ def handle_delete_mapping(request, filter_name=None):
     if not mapping:
         return JsonResponse({"error": "No mapping found for that account user."}, status=HTTPStatus.NOT_FOUND)
 
-    mapping.access_ids.all().delete()
+    mapping.access_ids.update(is_enabled=False, is_manual=True, last_updated_at=timezone.now())
+    _refresh_access_cache()
     return JsonResponse({"status": "unmapped"}, status=HTTPStatus.NO_CONTENT)
 
 
@@ -632,7 +789,7 @@ def sync_external_users():
                 f.write(f"Processing user from external system with account number: {user.get('accountNumber')}, first name: {user.get('firstName')}, last name: {user.get('lastName')}, member name: {user.get('memberName')}, usd balance: {user.get('usdBalance')}, zwg balance: {user.get('zwdBalance')} at {timezone.now()}\n")    
 
             # create of update AccountMapping entry for the user
-            mapping, created = AccountMapping.objects.update_or_create(
+            mapping, created = AccountMapping.objects.get_or_create(
                 account_user_id=str(user.get('accountNumber')), # Assuming accountNumber is the unique identifier for the user in the external system
                 defaults={
                     'first_name': user.get('firstName', ''),
@@ -643,6 +800,19 @@ def sync_external_users():
                     'last_updated_at': timezone.now(),
                 }
             )
+            if mapping.is_manual:
+                logger.info("External sync skipped local mapping %s", mapping.pk)
+                continue
+            if not created:
+                AccountMapping.objects.filter(pk=mapping.pk, is_manual=False).update(
+                    first_name=user.get('firstName', ''),
+                    last_name=user.get('lastName', ''),
+                    narration=str(user.get('memberName', '')).upper(),
+                    usd_balance=user.get('usdBalance', -9999999.00),
+                    zwg_balance=user.get('zwdBalance', -9999999.00),
+                    last_updated_at=timezone.now(),
+                )
+                mapping.refresh_from_db()
             # print(f"Account number: {user.get('accountNumber')}. {'Created' if created else 'Updated'} AccountMapping for account_user_id {mapping.account_user_id} with first_name: {mapping.first_name}, last_name: {mapping.last_name}, narration: {mapping.narration}, usd_balance: {mapping.usd_balance}, zwg_balance: {mapping.zwg_balance}")  # Debug log to verify creation or update of AccountMapping entry for each user from external system
 
             # log creation or update of AccountMapping entry for each user from external system to file
@@ -650,17 +820,32 @@ def sync_external_users():
                 f.write(f"Account number: {user.get('accountNumber')}. {'Created' if created else 'Updated'} AccountMapping for account_user_id {mapping.account_user_id} with first_name: {mapping.first_name}, last_name: {mapping.last_name}, narration: {mapping.narration}, usd_balance: {mapping.usd_balance}, zwg_balance: {mapping.zwg_balance} at {timezone.now()}\n")
 
             # create or update AccessId entry
-            access, _ = AccessId.objects.update_or_create(
-                access_id=str(user.get('cardId')),
-                defaults={
-                    "auth_type": "card",  # Assuming auth_type is card for all users from the external system, but in a real implementation we would want to ensure we are capturing the correct auth_type for each user based on the data from the external system
-                    "mapping": mapping
-                }
-            )
+            raw_card_id = user.get('cardId')
+            card_id = str(raw_card_id).strip() if raw_card_id is not None else ''
+            if not card_id:
+                logger.warning("External sync skipped blank card ID for mapping %s", mapping.pk)
+                continue
+            with transaction.atomic():
+                candidates = list(AccessId.objects.select_for_update().filter(access_id=card_id))
+                if any(entry.is_manual or (entry.mapping_id and entry.mapping.is_manual) for entry in candidates):
+                    logger.info("External sync skipped protected access ID for mapping %s", mapping.pk)
+                    continue
+                access, access_created = AccessId.objects.get_or_create(
+                    access_id=card_id, access_device=None,
+                    defaults={"auth_type": "card", "mapping": mapping},
+                )
+                if not access_created:
+                    access = AccessId.objects.select_for_update().get(pk=access.pk)
+                    if access.is_manual or (access.mapping_id and access.mapping.is_manual):
+                        logger.info("External sync skipped concurrently protected access ID for mapping %s", mapping.pk)
+                        continue
+                    access.auth_type = 'card'
+                    access.mapping = mapping
+                    access.save(update_fields=['auth_type', 'mapping', 'last_updated_at'])
 
             # log creation or update of AccessId entry for each user from external system to file
             with open("mapping_log.txt", "a") as f:
-                f.write(f"Account number: {user.get('accountNumber')}. {'Created' if _ else 'Updated'} AccessId for access_id {access.access_id} with auth_type: {access.auth_type} mapped to account_user_id {mapping.account_user_id} at {timezone.now()}\n")
+                f.write(f"Account number: {user.get('accountNumber')}. {'Created' if access_created else 'Updated'} AccessId for access_id {access.access_id} with auth_type: {access.auth_type} mapped to account_user_id {mapping.account_user_id} at {timezone.now()}\n")
 
         # deletions for biometric entries will be handled manually through a separate admin interface for now since we don't have a unique identifier for those users from the external system in this demo implementation, but in a real implementation we would want to ensure we are also handling deletions and updates for all types of entries based on the data from the external system to keep the mapping state up-to-date and accurate for access decisions
 

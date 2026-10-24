@@ -97,7 +97,7 @@ class Command(BaseCommand):
         # Find AccountMapping records NOT in the API
         stale_mappings = AccountMapping.objects.exclude(
             account_user_id__in=api_account_numbers
-        )
+        ).filter(is_manual=False).exclude(access_ids__is_manual=True).distinct()
 
         # Get related AccessId records
         stale_mapping_ids = list(stale_mappings.values_list('id', flat=True))

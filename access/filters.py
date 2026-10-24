@@ -15,10 +15,11 @@ class AccountMappingFilter(django_filters.FilterSet):
         method='filter_connection_status',
         label='Status',
     )
+    classification = django_filters.ChoiceFilter(choices=AccountMapping.CLASSIFICATION_CHOICES, label='Staff / Member')
 
     class Meta:
         model = AccountMapping
-        fields = ['search', 'account_user_id', 'first_name', 'last_name', 'device_access_id', 'connection_status']
+        fields = ['search', 'account_user_id', 'first_name', 'last_name', 'device_access_id', 'connection_status', 'classification']
 
     def filter_search(self, queryset, name, value):
         if not value:
@@ -28,18 +29,18 @@ class AccountMappingFilter(django_filters.FilterSet):
             | Q(first_name__icontains=value)
             | Q(last_name__icontains=value)
             | Q(narration__icontains=value)
-            | Q(access_ids__access_id__icontains=value)
+            | Q(access_ids__is_enabled=True, access_ids__access_id__icontains=value)
         ).distinct()
 
     def filter_device_access_id(self, queryset, name, value):
         if not value:
             return queryset
-        return queryset.filter(access_ids__access_id__icontains=value).distinct()
+        return queryset.filter(access_ids__is_enabled=True, access_ids__access_id__icontains=value).distinct()
 
     def filter_connection_status(self, queryset, name, value):
         if value == 'connected':
-            return queryset.filter(access_ids__access_id__isnull=False).exclude(access_ids__access_id='').distinct()
+            return queryset.filter(access_ids__is_enabled=True, access_ids__access_id__gt='').distinct()
         if value == 'not_connected':
-            connected_ids = queryset.filter(access_ids__access_id__isnull=False).exclude(access_ids__access_id='').values('id')
+            connected_ids = queryset.filter(access_ids__is_enabled=True, access_ids__access_id__gt='').values('id')
             return queryset.exclude(id__in=connected_ids).distinct()
         return queryset
