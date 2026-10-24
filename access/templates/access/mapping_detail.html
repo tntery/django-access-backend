@@ -16,7 +16,7 @@
             <p class="text-muted mb-0">Mapping details for account {{ mapping.account_user_id }}</p>
             <span class="badge bg-info text-dark">{{ mapping.get_classification_display }}</span>
             <span class="badge bg-secondary">{% if mapping.is_manual %}Local mapping{% else %}External mapping{% endif %}</span>
-            {% if request.user.is_staff or request.user.is_superuser %}
+            {% if can_manage_mappings %}
             <a href="{% url 'mapping_edit' mapping.pk %}" class="btn btn-sm btn-outline-primary ms-2">
                 {% if mapping.is_manual %}Edit mapping{% else %}Edit classification{% endif %}
             </a>
@@ -96,7 +96,7 @@
 
     <section class="mb-4" aria-labelledby="connections-heading">
         <h2 id="connections-heading" class="h5">Linked access IDs</h2>
-        {% if request.user.is_staff or request.user.is_superuser %}
+        {% if can_manage_mappings %}
         <a href="{% url 'mapping_access_id_create' mapping.pk %}" class="btn btn-sm btn-primary mb-2">Connect access ID</a>
         {% endif %}
         <p class="text-muted">Connected means an access ID is linked, not that access is granted. Device active/inactive status is configured status, not a live connectivity check.</p>
@@ -136,7 +136,7 @@
                         {% endwith %}
                         <td>
                             <span class="badge bg-secondary">{% if access_id.is_manual %}Manual{% else %}Automatic{% endif %}</span>
-                            {% if request.user.is_staff or request.user.is_superuser %}
+                            {% if can_manage_mappings %}
                             <a class="btn btn-sm btn-outline-primary my-1" href="{% url 'mapping_access_id_edit' mapping.pk access_id.pk %}">Edit</a>
                             <form method="post" action="{% url 'mapping_access_id_remove' mapping.pk access_id.pk %}"
                                   data-confirm="Disconnect this access ID? External sync will not reconnect it. Offline devices receive changes on their next sync.">

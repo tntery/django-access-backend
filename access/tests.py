@@ -474,14 +474,14 @@ class TemplateViewAuthenticationTests(TestCase):
 		self.assertEqual(response.status_code, 302)
 		self.assertIn('/login/?next=/settings/', response.url)
 
-	def test_authenticated_user_can_access_template_views(self):
+	def test_viewer_can_access_mappings_but_not_settings(self):
 		self.client.force_login(self.user)
 
 		list_response = self.client.get('/')
 		settings_response = self.client.get('/settings/')
 
 		self.assertEqual(list_response.status_code, 200)
-		self.assertEqual(settings_response.status_code, 200)
+		self.assertEqual(settings_response.status_code, 403)
 		self.assertContains(list_response, 'admin_user')
 
 	def test_successful_login_shows_welcome_message(self):

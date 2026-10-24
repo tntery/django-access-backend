@@ -22,7 +22,7 @@
                 Belgravia Sports Club
             </h6>
             <h2 class="h4 mb-1 text-uppercase">User Connections</h2>
-            {% if request.user.is_staff or request.user.is_superuser %}
+            {% if can_manage_mappings %}
             <a href="{% url 'mapping_create' %}" class="btn btn-sm btn-primary my-2">Create local mapping</a>
             {% endif %}
             <span>
@@ -210,6 +210,7 @@
 </footer>
 
 <!-- Mapping Modal -->
+{% if can_manage_mappings %}
 <div class="modal fade" id="mappingModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -217,6 +218,7 @@
                 <h5 class="modal-title" id="mappingModalTitle">Connection Pending</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="closeMappingModal()"></button>
             </div>
+            {% endif %}
             <div class="modal-body">
                 <div id="modalAlert" class="alert alert-danger d-flex align-items-center d-none" role="alert">
                     <i class="bi bi-exclamation-triangle-fill me-2"></i>
@@ -253,6 +255,8 @@
 {% endblock %}
 
 {% block extra_scripts %}
+{% if can_manage_mappings %}
 <script src="{% static 'access/js/app.js' %}"></script>
 <script src="{% static 'access/js/access_override.js' %}"></script>
+{% endif %}
 {% endblock %}

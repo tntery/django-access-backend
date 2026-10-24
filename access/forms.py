@@ -1,6 +1,74 @@
 from django import forms
 from django.forms import ModelForm, ValidationError
+from django.contrib.auth import get_user_model, password_validation
+from django.contrib.auth.models import Group
 from .models import AccessControlDevice, AccessId, AccountMapping, Setting
+from .roles import ROLE_CHOICES, ROLE_GROUPS, get_assigned_role
+
+
+class PortalUserForm(ModelForm):
+    role = forms.ChoiceField(choices=ROLE_CHOICES, initial='viewer')
+    password1 = forms.CharField(
+        label='Password', strip=False, required=False, widget=forms.PasswordInput,
+        help_text=password_validation.password_validators_help_text_html(),
+    )
+    password2 = forms.CharField(
+        label='Confirm password', strip=False, required=False, widget=forms.PasswordInput,
+        help_text='Leave both password fields blank to keep the current password when editing.',
+    )
+
+    class Meta:
+        model = get_user_model()
+        fields = ['username', 'first_name', 'last_name', 'email', 'role', 'is_active',
+                  'password1', 'password2']
+
+    def __init__(self, *args, actor, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.actor = actor
+        self.initial['role'] = get_assigned_role(self.instance) if self.instance.pk else 'viewer'
+        if not self.instance.pk:
+            self.fields['password1'].required = True
+            self.fields['password2'].required = True
+
+    def clean(self):
+        cleaned = super().clean()
+        password = cleaned.get('password1')
+        if password != cleaned.get('password2'):
+            self.add_error('password2', 'The passwords do not match.')
+        if self.instance.pk == self.actor.pk:
+            if cleaned.get('role') != 'admin' or not cleaned.get('is_active'):
+                raise ValidationError('You cannot deactivate your own account or remove your own admin role.')
+        if self.instance.is_superuser and cleaned.get('role') != 'admin':
+            self.add_error('role', 'Superusers must keep the Admin role.')
+        return cleaned
+
+    def _post_clean(self):
+        super()._post_clean()
+        password = self.cleaned_data.get('password1')
+        if password:
+            try:
+                password_validation.validate_password(password, self.instance)
+            except ValidationError as error:
+                self.add_error('password1', error)
+
+    def save(self):
+        user = super().save(commit=False)
+        password = self.cleaned_data.get('password1')
+        if password:
+            user.set_password(password)
+        # Do not grant Django admin-site access; remove legacy access on demotion.
+        if not user.is_superuser and self.cleaned_data['role'] == 'viewer':
+            user.is_staff = False
+        user.save()
+        role_groups = [
+            Group.objects.get_or_create(name=name)[0] for name in ROLE_GROUPS.values()
+        ]
+        user.groups.remove(*role_groups)
+        user.groups.add(next(
+            group for group in role_groups
+            if group.name == ROLE_GROUPS[self.cleaned_data['role']]
+        ))
+        return user
 
 
 class ManualMappingForm(ModelForm):

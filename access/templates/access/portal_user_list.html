@@ -1,0 +1,56 @@
+{% extends "access/includes/base.html" %}
+
+{% block title %}Portal Users | Smart Access Control{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h1 class="h4">Portal users</h1>
+            <p class="text-muted mb-0">Manage sign-in accounts and roles, separate from physical access connections.</p>
+        </div>
+        <a href="{% url 'portal_user_create' %}" class="btn btn-primary">Create portal user</a>
+    </div>
+    <div class="alert alert-light border">
+        <strong>Viewer:</strong> read connections and history.
+        <strong>Staff:</strong> also manage mappings and access IDs.
+        <strong>Admin:</strong> also manage portal users, settings, and accounting sync.
+    </div>
+    <form method="get" class="d-flex gap-2 mb-3" role="search">
+        <label class="visually-hidden" for="user-search">Search portal users</label>
+        <input id="user-search" name="q" value="{{ query }}" class="form-control" placeholder="Search username, name, or email">
+        <button class="btn btn-outline-primary" type="submit">Search</button>
+        <a href="{% url 'portal_user_list' %}" class="btn btn-outline-secondary">Clear</a>
+    </form>
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead><tr><th>Username</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td>{{ row.account.username }}{% if row.account.pk == request.user.pk %} <span class="badge text-bg-secondary">You</span>{% endif %}</td>
+                    <td>{{ row.account.get_full_name|default:"-" }}</td>
+                    <td>{{ row.account.email|default:"-" }}</td>
+                    <td>{{ row.role|title }}{% if row.account.is_superuser %} <span class="badge text-bg-dark">Superuser</span>{% endif %}</td>
+                    <td>{% if row.account.is_active %}<span class="badge text-bg-success">Active</span>{% else %}<span class="badge text-bg-secondary">Inactive</span>{% endif %}</td>
+                    <td>
+                        {% if not row.account.is_superuser or request.user.is_superuser %}
+                        <a href="{% url 'portal_user_edit' row.account.pk %}" class="btn btn-sm btn-outline-primary" aria-label="Edit {{ row.account.username }}">Edit</a>
+                        {% else %}<span class="text-muted">Superuser managed</span>{% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center">No portal users found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if page_obj.has_other_pages %}
+    <nav aria-label="Portal user pages" class="d-flex align-items-center gap-3">
+        {% if page_obj.has_previous %}<a href="?q={{ query|urlencode }}&amp;page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?q={{ query|urlencode }}&amp;page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}

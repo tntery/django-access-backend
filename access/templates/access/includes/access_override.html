@@ -3,7 +3,7 @@
         {{ mapping.access_decision_type }}{% if mapping.access_override != 'auto' %}: {{ mapping.get_access_override_display }}{% endif %}
     </span>
 </div>
-{% if request.user.is_staff or request.user.is_superuser %}
+{% if can_manage_mappings %}
 <form method="post" action="{% url 'account_mapping_override' mapping.pk %}"
       class="access-override-form" data-current="{{ mapping.access_override }}" data-member="{{ mapping.get_full_name }}">
     {% csrf_token %}

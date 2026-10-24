@@ -16,6 +16,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth import get_user_model, update_session_auth_hash
 from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
@@ -24,7 +25,8 @@ from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.views.decorators.http import require_http_methods, require_POST
 from .filters import AccountMappingFilter
 from .models import AccessControlDevice, AccessDeviceSyncLog, AccessEventLog, TamperEventLog, AccessId, AccountMapping, PendingAccountMapping, MappingModalState, Setting, SystemMetadata
-from .forms import ManualAccessIdForm, ManualMappingForm, MappingClassificationForm, SettingForm
+from .forms import ManualAccessIdForm, ManualMappingForm, MappingClassificationForm, PortalUserForm, SettingForm
+from .roles import get_assigned_role, require_role
 
 EXTERNAL_ACCOUNTING_DB_NAME = 'external_accounting.sqlite3'
 ACCOUNT_MAPPING_PAGE_SIZE = 25
@@ -79,8 +81,51 @@ def _find_access_id(device_access_id, device):
 
 
 def _require_staff(request):
-    if not (request.user.is_staff or request.user.is_superuser):
-        raise PermissionDenied
+    require_role(request, 'staff', 'admin')
+
+
+@login_required
+@require_http_methods(['GET'])
+def portal_user_list_view(request):
+    require_role(request, 'admin')
+    users = get_user_model().objects.prefetch_related('groups').order_by('username', 'pk')
+    query = request.GET.get('q', '').strip()
+    if query:
+        users = users.filter(
+            Q(username__icontains=query) | Q(first_name__icontains=query)
+            | Q(last_name__icontains=query) | Q(email__icontains=query)
+        )
+    page_obj = Paginator(users, ACCOUNT_MAPPING_PAGE_SIZE).get_page(request.GET.get('page'))
+    rows = [{'account': user, 'role': get_assigned_role(user)} for user in page_obj]
+    return render(request, 'access/portal_user_list.html', {
+        'rows': rows, 'page_obj': page_obj, 'query': query,
+    })
+
+
+@login_required
+@require_http_methods(['GET', 'POST'])
+def portal_user_form_view(request, pk=None):
+    require_role(request, 'admin')
+    User = get_user_model()
+    with transaction.atomic():
+        user = get_object_or_404(User.objects.select_for_update(), pk=pk) if pk else User()
+        if user.is_superuser and not request.user.is_superuser:
+            raise PermissionDenied
+        form = PortalUserForm(
+            request.POST if request.method == 'POST' else None,
+            instance=user, actor=request.user,
+        )
+        if request.method == 'POST' and form.is_valid():
+            user = form.save()
+            if user.pk == request.user.pk and form.cleaned_data.get('password1'):
+                update_session_auth_hash(request, user)
+            logger.info('Portal user saved: user=%s role=%s active=%s operator=%s',
+                        user.pk, form.cleaned_data['role'], user.is_active, request.user.pk)
+            messages.success(request, 'Portal user updated.' if pk else 'Portal user created.')
+            return redirect('portal_user_list')
+    return render(request, 'access/portal_user_form.html', {
+        'form': form, 'heading': 'Edit portal user' if pk else 'Create portal user',
+    })
 
 
 def _refresh_access_cache():
@@ -324,8 +369,7 @@ def account_mapping_detail_view(request, pk):
 @login_required
 @require_POST
 def account_mapping_override_view(request, pk):
-    if not (request.user.is_staff or request.user.is_superuser):
-        raise PermissionDenied
+    _require_staff(request)
     override = request.POST.get('access_override')
     if override not in dict(AccountMapping.ACCESS_OVERRIDE_CHOICES):
         return HttpResponseBadRequest('Invalid access override. Choose Auto, Grant, or Reject.')
@@ -350,8 +394,10 @@ def account_mapping_override_view(request, pk):
 
 
 @login_required
+@require_http_methods(['GET', 'POST'])
 def settings_view(request):
     """View to display and update settings"""
+    require_role(request, 'admin')
     settings_obj = Setting.get_solo()
     
     if request.method == 'POST':
@@ -692,9 +738,13 @@ def access_event_view(request, device_serial_number=None):
         return JsonResponse({"error": "Invalid request method"}, status=405)
 
 
-@csrf_exempt
+@login_required
+@csrf_protect
 def api_account_mapping_view(request, filter_name=None):
     """API endpoint to return list of mappings based on filter_name (e.g. pending, update) or to create/update/delete mapping based on request method and filter_name (e.g. account_user_id for delete)"""
+    _require_staff(request)
+    if request.method == 'POST' and filter_name == 'update':
+        require_role(request, 'admin')
     match request.method:
         case "GET":
             return handle_get_mappings(request, filter_name)
@@ -898,9 +948,11 @@ def fetch_external_users():
     return JsonResponse({"error": result.get("error", "Failed to fetch users from external accounting system")}, status=result.get("status", HTTPStatus.INTERNAL_SERVER_ERROR))
 
     
-@csrf_exempt
+@login_required
+@csrf_protect
 def set_modal_state_view(request):
     """API endpoint to set the state of the mapping modal (open/closed)"""
+    _require_staff(request)
     if request.method == "POST":
         print("Received modal state update:", request.body)  # Debug log
         try:

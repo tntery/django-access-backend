@@ -14,6 +14,8 @@ from .views import (
     set_modal_state_view,
     api_account_mapping_view,
     settings_view,
+    portal_user_list_view,
+    portal_user_form_view,
 )
 
 urlpatterns = [
@@ -31,6 +33,9 @@ urlpatterns = [
     path('mappings/<int:pk>/access-ids/<int:access_pk>/remove/', mapping_access_id_remove_view, name='mapping_access_id_remove'),
     path('mappings/<int:pk>/access-override/', account_mapping_override_view, name='account_mapping_override'),
     path('settings/', settings_view, name='settings'),
+    path('users/', portal_user_list_view, name='portal_user_list'),
+    path('users/new/', portal_user_form_view, name='portal_user_create'),
+    path('users/<int:pk>/edit/', portal_user_form_view, name='portal_user_edit'),
     
     # api endpoints
     path('api/access/<str:device_serial_number>', access_event_view, name='access_event'),

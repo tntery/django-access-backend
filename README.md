@@ -115,6 +115,44 @@ UI:
 - `/` - mapping management page
 - `/mappings/<pk>/` - authenticated mapping detail page, opened by selecting a user's name
 - `/settings/` - authorization settings page
+- `/users/` - admin-only portal account management
+
+### Portal Users and Roles
+
+Portal sign-in accounts are separate from the member/staff classification used
+for physical access. Admins can create accounts, edit names/email and roles,
+set passwords, and activate or deactivate accounts from **Portal users**.
+Passwords use Django's configured validators and password hashing. Leave both
+password fields blank when editing to retain the existing password.
+Deactivation blocks login and existing authenticated sessions; accounts are not
+deleted, preserving their identity.
+
+| Role | Permissions |
+| --- | --- |
+| Viewer | Read mappings, connections, balances, and access history |
+| Staff | Viewer access plus create/edit mappings, connect/edit/disconnect IDs, and change access overrides |
+| Admin | Staff access plus portal user management, authorization settings, and external accounting sync |
+
+Permissions are enforced on the server, including mapping and modal-state APIs;
+hidden controls alone do not authorize an operation. These browser APIs require
+an authenticated session and CSRF protection. The device access-event API is
+unchanged.
+
+Run `python manage.py migrate` to create the `Portal Viewer`, `Portal Staff`,
+and `Portal Admin` Django groups and assign existing users: superusers become
+admins, existing `is_staff` users remain staff, and other accounts become viewers.
+Superusers always have portal admin access. Existing staff flags remain supported.
+New non-superuser accounts use portal groups, not `is_staff`, so portal roles do
+not grant entry to Django's separate admin site. Editing preserves an existing
+staff flag unless the account is demoted to Viewer. Other group memberships
+are preserved. If multiple portal groups are assigned outside this UI, Admin
+takes precedence over Staff, then Viewer.
+
+Bootstrap the first admin with `python manage.py createsuperuser`. Portal admins
+cannot edit superuser accounts unless they are themselves superusers. Admins
+cannot deactivate themselves or remove their own admin role, and superusers
+cannot be demoted through the portal. To revoke access, edit another account
+and clear **Active**.
 
 ### Mapping Details
 
