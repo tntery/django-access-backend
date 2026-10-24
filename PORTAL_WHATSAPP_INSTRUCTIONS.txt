@@ -1,0 +1,30 @@
+*VERIGATE SMART ACCESS CONTROL*
+*Quick guide for portal users*
+
+1. *Sign in*
+Open the portal link provided by Belgravia Sports Club. Sign in with the username and password supplied by your portal administrator. There is no self-registration. Log out when finished, especially on a shared device. Never share your password.
+
+2. *Find a user*
+On *User Connections*, open *Quick actions*. Search by name, accounting user ID, display name, or access ID. You can filter by *Connected / Not Connected* or *Staff / Member*. Tap *Filter* to apply or *Clear* to reset. Tap *View* beside a result for its details.
+
+3. *Understand the details*
+• *Connected* means an access ID is linked; it does not guarantee access is granted.
+• *Grant / Reject* shows the recorded access decision.
+• Device *Active / Inactive* is a configured status, not a live connectivity check.
+• *Auto* applies club rules: Staff are granted access; Members are checked against those rules.
+• A manual *Grant* or *Reject* overrides Auto for all linked access IDs.
+• Inactive devices and disconnected IDs still reject access. Offline devices receive changes at their next successful sync, so a change may not be immediate.
+• Access history shows events attributed to that user; some attempts may not appear if they could not be attributed.
+
+4. *Roles*
+*Viewer* can view records and history. *Staff* can also manage mappings, access IDs, and access decisions. *Admin* can additionally manage portal users, settings, and user synchronisation. Your role is shown beside your username. Only make changes authorised by club procedures.
+
+5. *Need help?*
+Contact your club/portal administrator or Sesdeq support:
+*Phone / WhatsApp:* +263 787 470 156
+*Website:* https://sesdeq.co.zw
+
+When reporting an issue, provide the user's name or accounting user ID, approximate attempt time, location/device if known, and the displayed decision. Do not send passwords. Share credential IDs or personal details only through a private, approved channel.
+
+*Verigate Smart Access Control*
+Portal access and permissions are managed by Belgravia Sports Club.
