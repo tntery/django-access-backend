@@ -13,6 +13,11 @@ class AccountMapping(models.Model):
         ("main_bar", "Main Bar"),
         ("squash", "Squash Court"),
     )
+    ACCESS_OVERRIDE_CHOICES = (
+        ("auto", "Auto"),
+        ("grant", "Grant"),
+        ("reject", "Reject"),
+    )
     account_user_id = models.CharField(max_length=100, unique=True, help_text="Unique identifier from accounting system")
     first_name = models.CharField(max_length=100, null=True, blank=True, help_text="User's first name")
     last_name = models.CharField(max_length=100, null=True, blank=True, help_text="User's last name")
@@ -21,6 +26,7 @@ class AccountMapping(models.Model):
     zwg_balance = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="User's balance in ZWG")
     accounting_system = models.CharField(max_length=50, choices=ACCOUNTING_SYSTEM_CHOICES, default="palladium", help_text="Accounting system name")
     accounting_group = models.CharField(max_length=100, null=True, blank=True, choices=ACCOUNTING_GROUP_CHOICES, help_text="Accounting group or category for the user")
+    access_override = models.CharField(max_length=6, choices=ACCESS_OVERRIDE_CHOICES, default="auto", help_text="Local access decision; external user syncs do not change this value.")
     created_at = models.DateTimeField(auto_now_add=True)
     last_updated_at = models.DateTimeField(auto_now=True)
 
@@ -42,6 +48,14 @@ class AccountMapping(models.Model):
 
     def __str__(self):
         return f"Account-{self.account_user_id} | {self.get_full_name()} | System-{self.accounting_system}"
+
+    @property
+    def access_decision_type(self):
+        return "Auto" if self.access_override == "auto" else "Manual"
+
+    @property
+    def manual_access_decision(self):
+        return self.access_override.upper() if self.access_override in ("grant", "reject") else None
 
     @property
     def device_access_id(self):
@@ -107,6 +121,7 @@ class AccessEventLog(models.Model):
     device_access_id = models.CharField(max_length=50, help_text="Unique identifier from access control device")
     user = models.ForeignKey(AccountMapping, on_delete=models.SET_NULL, null=True, blank=True, help_text="Linked account mapping if available")
     access_status = models.CharField(max_length=10, choices=ACCESS_STATUSES)
+    decision_type = models.CharField(max_length=6, choices=(("auto", "Auto"), ("manual", "Manual")), default="auto")
     access_type = models.CharField(max_length=20, choices=ACCESS_TYPES, default="normal")
     access_control_device = models.ForeignKey(AccessControlDevice, on_delete=models.SET_NULL, null=True, blank=True, help_text="The access control device where this event occurred")
     event_timestamp = models.DateTimeField(auto_now_add=True)
@@ -181,4 +196,3 @@ class Setting(SingletonModel):
 
     def __str__(self):
         return f": authorization_flow={self.authorization_flow}, usd_balance_threshold={self.usd_balance_threshold}, zwg_balance_threshold={self.zwg_balance_threshold}"
-

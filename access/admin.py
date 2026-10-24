@@ -14,14 +14,14 @@ class AccessControlDeviceAdmin(admin.ModelAdmin):
     list_filter = ('is_active', 'last_sync_at')
 
 class AccountMappingAdmin(admin.ModelAdmin):
-    list_display = ('account_user_id', 'narration', 'usd_balance', 'zwg_balance', 'created_at', 'last_updated_at')
+    list_display = ('account_user_id', 'narration', 'usd_balance', 'zwg_balance', 'access_override', 'created_at', 'last_updated_at')
     search_fields = ('account_user_id', 'first_name', 'last_name', 'narration', 'accounting_system')
-    list_filter = ('accounting_system', 'created_at', 'last_updated_at')
+    list_filter = ('accounting_system', 'access_override', 'created_at', 'last_updated_at')
 
 class AccessEventLogAdmin(admin.ModelAdmin):
-    list_display = ('device_access_id', 'user__narration', 'access_type', 'access_status',  'access_control_device__alias','event_timestamp')
+    list_display = ('device_access_id', 'user__narration', 'access_type', 'access_status', 'decision_type', 'access_control_device__alias','event_timestamp')
     search_fields = ('device_access_id', 'user__account_user_id', 'user__first_name', 'user__last_name', 'user__narration', 'access_status', 'access_type', 'access_control_device__alias', 'access_control_device__device_id')
-    list_filter = ('access_status', 'access_type', 'event_timestamp', 'access_control_device__alias')
+    list_filter = ('access_status', 'decision_type', 'access_type', 'event_timestamp', 'access_control_device__alias')
 
 class AccessDeviceSyncLogAdmin(admin.ModelAdmin):
     list_display = ('device', 'success', 'timestamp')

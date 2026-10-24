@@ -131,9 +131,42 @@ associated with the mapping recorded at the time of the attempt, even if an ID i
 subsequently disconnected or reassigned. Unattributed events are not matched by
 access ID, to avoid showing another account's history.
 
+### Mapping Access Overrides
+
+Each mapping has an `access_override` value: **Auto** (the default), **Grant**, or
+**Reject**. Staff and superusers can change it using the three-way control on the
+detail page or in the list's Access decision column. Changes require browser
+confirmation. Other authenticated operators can see the current decision but
+cannot change it.
+
+Grant and Reject are labeled **Manual** and take precedence over automatic
+authorization rules and staff-ID exceptions for all linked access IDs, including
+one-step mapping attempts. Auto restores existing automatic behavior. Inactive
+devices still reject access. External user/balance syncs never modify this local
+field.
+
+Live decisions read the current mapping. Device cache downloads rebuild decisions
+from current database state on every request, rather than trusting a process-local
+snapshot that another worker cannot invalidate. The grouped decision snapshot in
+`SystemMetadata` is also refreshed by UI override updates and device downloads. The device response
+shape remains unchanged. Already-offline devices retain their downloaded decisions
+until their next successful sync; overrides cannot reach them while offline.
+
+Access logs store the **Auto/Manual** decision type at the time of each event.
+Existing events are marked Auto by the migration.
+
+After updating an existing installation, apply the new fields before restarting
+the web and background workers:
+
+```powershell
+python manage.py migrate
+```
+
 API:
 
-- `POST /api/access` - submit an access event
+- `POST /api/access/<device_serial_number>` - submit an access event
+- `GET /api/access/<device_serial_number>` - download decisions for device caching
+- `POST /mappings/<pk>/access-override/` - staff-only, CSRF-protected override update (`access_override=auto|grant|reject`)
 - `POST /api/modal-state` - set modal state (`open` or `closed`)
 - `GET /api/mappings/pending` - fetch the pending scanned device ID
 - `POST /api/mappings` - create or update a mapping
@@ -141,13 +174,17 @@ API:
 
 ## Authorization Logic
 
-The singleton `Setting` model controls how access decisions are made:
+For mappings set to Auto, the singleton `Setting` model controls authorization:
 
-- `grant_all`: every access event is granted
-- `reject_all`: every access event is rejected
-- `check_balance`: access is granted only when the mapped user balance is greater than or equal to `balance_threshold`
+- `grant_all`: mapped users are granted access
+- `reject_all`: mapped users are rejected
+- `check_usd_balance`: check the USD balance against `usd_balance_threshold`
+- `check_zwg_balance`: check the ZWG balance against `zwg_balance_threshold`
+- `check_usd_or_zwg_balance`: either balance may meet its corresponding threshold
 
-When the mapping modal is open, incoming access events are always rejected and captured as pending mapping candidates.
+Manual mapping decisions take precedence over these rules. Unmapped IDs are
+rejected unless they are configured staff-ID exceptions. The existing one-step
+mapping flow grants valid mapping attempts in Auto mode.
 
 ## Access Logging
 
@@ -157,6 +194,7 @@ Each access decision is written to `AccessEventLog`, including:
 - `account_user_id` when a mapping exists
 - `accounting_system`
 - `access_status`
+- `decision_type` (`auto` or `manual`)
 - timestamp
 
 ## Running Tests
@@ -165,6 +203,12 @@ Run the critical-path test suite with:
 
 ```powershell
 python manage.py test access.tests
+```
+
+Run the mapping override and detail-page tests with:
+
+```powershell
+python manage.py test access.test_overrides access.tests.AccountMappingDetailViewTests
 ```
 
 The current tests cover:

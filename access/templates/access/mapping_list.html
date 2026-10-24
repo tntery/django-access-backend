@@ -109,6 +109,7 @@
                     <th class="text-end pe-5 ps-0">USD Balance</th>
                     <th class="text-end pe-5 ps-0">ZWG Balance</th>
                     <th>Status</th>
+                    <th>Access decision</th>
                     <!-- <th>Action</th> -->
                 </tr>
             </thead>
@@ -128,6 +129,7 @@
                         <span id="pendingBadge-{{ u.account_user_id }}" class="badge bg-warning d-none">Pending
                             Connection</span>
                     </td>
+                    <td>{% include "access/includes/access_override.html" with mapping=u return_to="list" %}</td>
                     <!-- <td>
                         {% if u.device_access_id %}
                         <button class="btn btn-sm btn-outline-danger" onclick="openUnmapModal(this)">
@@ -229,4 +231,5 @@
 
 {% block extra_scripts %}
 <script src="{% static 'access/js/app.js' %}"></script>
+<script src="{% static 'access/js/access_override.js' %}"></script>
 {% endblock %}

@@ -10,14 +10,17 @@ from pathlib import Path
 
 from django.conf import settings
 from django.core.paginator import Paginator
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Count, Q
-from django.http import JsonResponse
+from django.http import HttpResponseBadRequest, JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from .filters import AccountMappingFilter
 from .models import AccessControlDevice, AccessDeviceSyncLog, AccessEventLog, TamperEventLog, AccessId, AccountMapping, PendingAccountMapping, MappingModalState, Setting, SystemMetadata
 from .forms import SettingForm
@@ -61,7 +64,17 @@ def _log_access_event(device_access_id, access_status, mapping=None, access_type
         access_status=access_status,
         access_type=access_type,
         access_control_device=access_control_device,
+        decision_type='manual' if mapping and mapping.manual_access_decision else 'auto',
     )
+
+
+def _find_access_id(device_access_id, device):
+    entries = AccessId.objects.select_related('mapping').filter(access_id=device_access_id)
+    if device:
+        return entries.filter(access_device=device).first() or entries.filter(
+            Q(auth_type='card') | Q(access_device__isnull=True)
+        ).first()
+    return entries.first()
 
 
 def get_test_users():
@@ -180,6 +193,34 @@ def account_mapping_detail_view(request, pk):
 
 
 @login_required
+@require_POST
+def account_mapping_override_view(request, pk):
+    if not (request.user.is_staff or request.user.is_superuser):
+        raise PermissionDenied
+    override = request.POST.get('access_override')
+    if override not in dict(AccountMapping.ACCESS_OVERRIDE_CHOICES):
+        return HttpResponseBadRequest('Invalid access override. Choose Auto, Grant, or Reject.')
+
+    global access_decisions_list
+    with transaction.atomic():
+        mapping = get_object_or_404(AccountMapping.objects.select_for_update(), pk=pk)
+        mapping.access_override = override
+        mapping.save(update_fields=['access_override', 'last_updated_at'])
+        decisions = get_access_decisions_list()
+    access_decisions_list = decisions
+    logger.info(
+        "Mapping access override changed: mapping=%s override=%s operator=%s",
+        mapping.pk, override, request.user.pk,
+    )
+    messages.success(request, f'Access decision for {mapping.get_full_name()} set to {mapping.get_access_override_display()}.')
+    if request.POST.get('return_to') == 'list':
+        url = redirect('account_mapping_list').url
+        query = request.POST.get('list_query', '')
+        return redirect(f'{url}?{query}' if query else url)
+    return redirect('account_mapping_detail', pk=mapping.pk)
+
+
+@login_required
 def settings_view(request):
     """View to display and update settings"""
     settings_obj = Setting.get_solo()
@@ -246,18 +287,25 @@ def get_access_decisions_list():
     
     access_decission_list = []
 
-    staff_access_decission_list = [{"device_access_id": str(staff_id), "access": "GRANT"} for staff_id in STAFF_USER_IDS]
+    settings = Setting.get_solo()
+    staff_access_decission_list = []
+    for staff_id in STAFF_USER_IDS:
+        entry = AccessId.objects.select_related('mapping').filter(access_id=str(staff_id)).first()
+        staff_access_decission_list.append({
+            "device_access_id": str(staff_id),
+            "access": get_access_decision(str(staff_id), entry.mapping if entry else None, settings),
+        })
     access_decission_list.append({"staff": staff_access_decission_list})  # Add staff access decisions to the main access decisions list under a separate key for clarity and to avoid mixing with regular user access decisions, and to allow for easy filtering of staff access decisions in the access control device if needed
 
     print("Staff access id entries added to access id entry list for GET request to access_event_view:", staff_access_decission_list)  # Debug log to verify staff access id entries being added to the response
 
     print("Updated access decisions list with staff access decisions for GET request to access_event_view:", access_decission_list)  # Debug log to verify access decisions list after adding staff access decisions
 
-    settings = Setting.get_solo()
-
     # append for all access ids of auth type card
     card_access_decission_list = []
-    for access_id_entry in AccessId.objects.filter(auth_type="card"):
+    for access_id_entry in AccessId.objects.select_related('mapping').filter(
+        Q(auth_type="card") | Q(access_device__isnull=True)
+    ).exclude(access_id__isnull=True).exclude(access_id=''):
         mapping = access_id_entry.mapping
         access_decision = get_access_decision(access_id_entry.access_id, mapping, settings)
         card_access_decission_list.append({
@@ -267,10 +315,12 @@ def get_access_decisions_list():
     print("Card access id entries added to access id entry list for GET request to access_event_view:", card_access_decission_list)  # Debug log to verify card access id entries being added to the response
     access_decission_list.append({"card": card_access_decission_list})  # Add card access decisions to the main access decisions list under a separate key for clarity and to avoid mixing with biometric access decisions, and to allow for easy filtering of card access decisions in the access control device if needed
 
-    # append by device id for all access ids of auth type biometric
+    # Device-specific entries take precedence when an ID is enrolled on multiple devices.
     for access_control_device in AccessControlDevice.objects.filter(is_active=True):
         device_biometric_access_decission_list = []
-        for access_id_entry in access_control_device.access_ids.filter(auth_type="biometric"):
+        for access_id_entry in access_control_device.access_ids.select_related('mapping').exclude(
+            access_id__isnull=True
+        ).exclude(access_id=''):
             mapping = access_id_entry.mapping
             access_decision = get_access_decision(access_id_entry.access_id, mapping, settings)
             device_biometric_access_decission_list.append({
@@ -291,6 +341,13 @@ def get_access_decisions_list():
 def get_access_decision(device_access_id, mapping, settings):
     """Return access decision based on the authorization flow setting and relevant balance thresholds if applicable"""
     
+    if mapping and mapping.manual_access_decision:
+        return mapping.manual_access_decision
+    if str(device_access_id) in STAFF_USER_IDS:
+        return "GRANT"
+    if not mapping:
+        return "REJECT"
+
     authorization_flow = settings.authorization_flow
     print(f"Authorization flow setting: {authorization_flow} for device_access_id: {device_access_id} ({mapping.narration})")  # Debug log to verify which authorization flow is being applied for the access decision
 
@@ -416,7 +473,7 @@ def access_event_view(request, device_serial_number=None):
                 print(f"Extracted card_uid: {card_uid}, wiegand_id: {wiegand_id} from device_access_id: {device_access_id}")  # Debug log
 
                 # get mapping using card uid
-                access_id_entry = AccessId.objects.select_related('mapping').filter(access_id=card_uid).first()
+                access_id_entry = _find_access_id(card_uid, access_control_device)
                 mapping = access_id_entry.mapping if access_id_entry else None
 
                 # map wiegand id to the same user if there is a mapping for the card uid and grand access, otherwise reject access
@@ -426,9 +483,9 @@ def access_event_view(request, device_serial_number=None):
                         "mapping": mapping
                         }
                     )
-                    _log_access_event(wiegand_id, "grant", mapping, access_type="one_step_mapping", access_control_device=access_control_device if access_control_device else None)
-                    print("Access GRANTED for wiegand_id:", wiegand_id)  # Debug log
-                    return JsonResponse({"access": "GRANT"}, status=HTTPStatus.OK)
+                    decision = mapping.manual_access_decision or "GRANT"
+                    _log_access_event(wiegand_id, decision.lower(), mapping, access_type="one_step_mapping", access_control_device=access_control_device if access_control_device else None)
+                    return JsonResponse({"access": decision}, status=HTTPStatus.OK)
                 else:
                     if wiegand_id:
                         _log_access_event(wiegand_id, "reject", mapping, access_type="one_step_mapping", access_control_device=access_control_device if access_control_device else None)
@@ -438,30 +495,11 @@ def access_event_view(request, device_serial_number=None):
                     return JsonResponse({"access": "REJECT"}, status=HTTPStatus.OK)
 
             # normal access event flow for devices without wiegand/card uid mapping scenario
-            access_id_entry = AccessId.objects.select_related('mapping').filter(access_id=device_access_id).first()
+            access_id_entry = _find_access_id(device_access_id, access_control_device)
             mapping = access_id_entry.mapping if access_id_entry else None
 
-            if device_access_id in STAFF_USER_IDS:
-                print("Device_access_id is in exceptions list, granting access for testing purposes. device_access_id:", device_access_id)  # Debug log
-                _log_access_event(device_access_id, "grant", access_control_device=access_control_device if access_control_device else None)
-                return JsonResponse({"access": "GRANT"}, status=HTTPStatus.OK)
-
-            if not mapping:
-                print("No mapping found for device_access_id:", device_access_id)  # Debug log
-                _log_access_event(device_access_id, "reject", access_control_device=access_control_device if access_control_device else None)
-
-                return JsonResponse({"access": "REJECT"})
-                # return JsonResponse({"access": "GRANT"}) # TEMPORARILY ALLOW FOR NOW, TO RETURN TO REJECT ONCE DONE
             settings = Setting.get_solo()
-
-            # continue with access decision logic based on the authorization flow setting and relevant balance thresholds if applicable
-            access_decision = next((decision.get("access") for decision in access_decisions_list if decision.get("device_access_id") == device_access_id), "REJECT")
-
-            if access_decision == "GRANT":
-                print("Access GRANTED for device_access_id:", device_access_id)  # Debug log
-            else:
-                print("Access REJECTED for device_access_id:", device_access_id)  # Debug log
-                access_decision = get_access_decision(device_access_id, mapping, settings)  # fetch fresh access decision based on the latest user data from the external system at the time of the access event in case there have been changes since the last fetch to ensure accurate access decisions based on the most up-to-date user data
+            access_decision = get_access_decision(device_access_id, mapping, settings)
 
             _log_access_event(device_access_id, access_decision.lower(), mapping, access_control_device=access_control_device if access_control_device else None)
             return JsonResponse({"access": access_decision}, status=HTTPStatus.OK)
@@ -472,12 +510,8 @@ def access_event_view(request, device_serial_number=None):
     elif request.method == "GET":
         # return list of all mappings against access decision for local device caching purposes at the access control device level to allow it to make access decisions even if there are transient issues with the connection to the server or external accounting system.
 
-        if access_decisions_list:
-            print("Using cached access decisions list for GET request to access_event_view:", access_decisions_list)  # Debug log to verify that cached access decisions list is being used
-        else:
-            print("No cached access decisions list available for GET request to access_event_view, fetching fresh access decisions list.")  # Debug log to verify that fresh access decisions list is being fetched due to cache miss
-
-            access_decisions_list = get_access_decisions_list()  # fetch fresh access decisions list to ensure we are providing access control device with the necessary data to make access decisions at the time of the access event in case there have been changes since the last fetch to ensure accurate access decisions based on the most up-to-date user data
+        # A worker-local cache cannot observe overrides changed by another worker.
+        access_decisions_list = get_access_decisions_list()
 
         computed_access_decisions_list = []
         # add all staff and card access decisions to the computed access decisions list for local device caching purposes at the access control device level
@@ -488,6 +522,11 @@ def access_event_view(request, device_serial_number=None):
                 computed_access_decisions_list.extend(category.get("card", []))
             elif device_serial_number and category.get(device_serial_number):
                 computed_access_decisions_list.extend(category.get(device_serial_number, []))
+
+        computed_access_decisions_list = list({
+            decision["device_access_id"]: decision
+            for decision in computed_access_decisions_list
+        }.values())
 
         # log sync event for visibility in admin interface and troubleshooting purposes
         AccessDeviceSyncLog.objects.create(

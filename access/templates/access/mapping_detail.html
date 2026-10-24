@@ -1,5 +1,6 @@
 {% extends "access/includes/base.html" %}
 {% load humanize %}
+{% load static %}
 
 {% block title %}{{ mapping.get_full_name }} | Mapping Details{% endblock %}
 
@@ -20,6 +21,14 @@
         <span class="badge bg-danger">Not Connected</span>
         {% endif %}
     </div>
+
+    <section class="card mb-4" aria-labelledby="access-override-heading">
+        <div class="card-body">
+            <h2 id="access-override-heading" class="h5">Mapping access decision</h2>
+            <p class="text-muted">Auto uses authorization rules. Manual Grant or Reject overrides those rules for every linked access ID and survives external syncs. Inactive devices still reject access. Offline devices receive changes on their next sync.</p>
+            {% include "access/includes/access_override.html" with mapping=mapping %}
+        </div>
+    </section>
 
     <div class="row g-3 mb-4">
         <section class="col-lg-7" aria-labelledby="account-details-heading">
@@ -133,6 +142,7 @@
                         <th scope="col">Timestamp</th>
                         <th scope="col">Access ID</th>
                         <th scope="col">Decision</th>
+                        <th scope="col">Decision type</th>
                         <th scope="col">Event type</th>
                         <th scope="col">Device</th>
                     </tr>
@@ -143,6 +153,7 @@
                         <td class="text-nowrap">{{ event.event_timestamp|date:"Y-m-d H:i:s T" }}</td>
                         <td class="text-break">{{ event.device_access_id }}</td>
                         <td><span class="badge {% if event.access_status == 'grant' %}bg-success{% else %}bg-danger{% endif %}">{{ event.get_access_status_display }}</span></td>
+                        <td>{{ event.get_decision_type_display }}</td>
                         <td>{{ event.get_access_type_display }}</td>
                         <td>
                             {% with device=event.access_control_device %}
@@ -153,7 +164,7 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="5" class="text-center text-muted">No access events recorded for this mapping.</td></tr>
+                    <tr><td colspan="6" class="text-center text-muted">No access events recorded for this mapping.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -171,4 +182,8 @@
         {% endif %}
     </section>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'access/js/access_override.js' %}"></script>
 {% endblock %}
