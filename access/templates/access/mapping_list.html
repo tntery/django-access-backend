@@ -109,9 +109,10 @@
     </details>
 
     <section class="table-responsive">
-        <table class="table table-responsive  table-striped mt-4 border-top">
+        <table class="table table-responsive  table-striped mt-4 mb-0 border-top">
             <thead>
                 <tr class="border">
+                    <th></th>
                     <th>Full Name</th>
                     <th class="text-end pe-5 ps-0">USD Balance</th>
                     <th class="text-end pe-5 ps-0">ZWG Balance</th>
@@ -123,8 +124,10 @@
             <tbody>
                 {% for u in users %}
                 <tr data-accounting-id="{{ u.account_user_id }}" data-full-name="{{ u.get_full_name }}" class="border">
+
+                    <td><a href="{% url 'account_mapping_detail' u.pk %}" class="link-dark">View <i class="bi bi-eye"></i></a></td> <!-- Icon column for detail view link -->
                     <td>
-                        <a href="{% url 'account_mapping_detail' u.pk %}" class="link-dark">{{ u.get_full_name }}</a>
+                        {{ u.get_full_name }}
                         <span class="badge bg-info text-dark">{{ u.get_classification_display }}</span>
                         {% if u.is_manual %}<span class="badge bg-secondary">Local</span>{% endif %}
                     </td>
@@ -167,7 +170,11 @@
 
     {% if page_obj.paginator.num_pages > 1 %}
     <nav aria-label="User connections pages" class="mt-2">
-        <ul class="pagination pagination-sm flex-wrap justify-content-center justify-content-md-start gap-1 mapping-pagination">
+        <!-- showing ... of ... results -->
+         <p class="text-start text-muted fst-italic mt-0 mb-2">
+            Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ page_obj.paginator.count }} results
+        </p>
+        <ul class="pagination pagination-sm flex-wrap justify-content-center justify-content-md-start gap-1 mapping-pagination mb-2">
             <li class="page-item {% if not page_obj.has_previous %}disabled{% endif %}">
                 <a class="page-link"
                     href="?{% if query_string %}{{ query_string }}&amp;{% endif %}page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}"
@@ -196,6 +203,11 @@
     {% endif %}
     
 </div>
+
+<!-- powered by footer -->
+<footer class="text-center text-muted fst-italic mt-4 mb-2 py-4 bg-body-secondary">
+    Powered by <a href="https://sesdeq.co.zw" class="link-secondary" target="_blank">Sesdeq Digital</a>
+</footer>
 
 <!-- Mapping Modal -->
 <div class="modal fade" id="mappingModal" tabindex="-1" aria-hidden="true">
