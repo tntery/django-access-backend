@@ -5,6 +5,7 @@ from .views import (
     AccessLogoutView,
     access_event_view,
     account_mapping_list_view,
+    account_mapping_detail_view,
     set_modal_state_view,
     api_account_mapping_view,
     settings_view,
@@ -17,6 +18,7 @@ urlpatterns = [
 
     # UI views
     path('', account_mapping_list_view, name='account_mapping_list'),
+    path('mappings/<int:pk>/', account_mapping_detail_view, name='account_mapping_detail'),
     path('settings/', settings_view, name='settings'),
     
     # api endpoints

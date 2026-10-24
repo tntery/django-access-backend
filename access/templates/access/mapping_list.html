@@ -115,7 +115,7 @@
             <tbody>
                 {% for u in users %}
                 <tr data-accounting-id="{{ u.account_user_id }}" data-full-name="{{ u.get_full_name }}">
-                    <td>{{ u.get_full_name }}</td>
+                    <td><a href="{% url 'account_mapping_detail' u.pk %}">{{ u.get_full_name }}</a></td>
                     <td class="text-end pe-5 ps-0">{{ u.usd_balance }}</td>
                     <td class="text-end pe-5 ps-0">{{ u.zwg_balance }}</td>
                     <td>

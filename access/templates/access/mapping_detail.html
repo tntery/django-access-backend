@@ -1,0 +1,174 @@
+{% extends "access/includes/base.html" %}
+{% load humanize %}
+
+{% block title %}{{ mapping.get_full_name }} | Mapping Details{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+    <a href="{% url 'account_mapping_list' %}" class="btn btn-sm btn-outline-secondary mb-3">
+        <i class="bi bi-arrow-left me-1" aria-hidden="true"></i> Back to User Connections
+    </a>
+
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <h1 class="h4 text-break">{{ mapping.get_full_name }}</h1>
+            <p class="text-muted mb-0">Mapping details for account {{ mapping.account_user_id }}</p>
+        </div>
+        {% if connected %}
+        <span class="badge bg-success">Connected</span>
+        {% else %}
+        <span class="badge bg-danger">Not Connected</span>
+        {% endif %}
+    </div>
+
+    <div class="row g-3 mb-4">
+        <section class="col-lg-7" aria-labelledby="account-details-heading">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h2 id="account-details-heading" class="h5">Account details</h2>
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">Accounting user ID</dt>
+                        <dd class="col-sm-8 text-break">{{ mapping.account_user_id }}</dd>
+                        <dt class="col-sm-4">First name</dt>
+                        <dd class="col-sm-8 text-break">{{ mapping.first_name|default:"Not provided" }}</dd>
+                        <dt class="col-sm-4">Last name</dt>
+                        <dd class="col-sm-8 text-break">{{ mapping.last_name|default:"Not provided" }}</dd>
+                        <dt class="col-sm-4">Narration</dt>
+                        <dd class="col-sm-8 text-break">{{ mapping.narration|default:"Not provided" }}</dd>
+                        <dt class="col-sm-4">Accounting system</dt>
+                        <dd class="col-sm-8">{{ mapping.get_accounting_system_display }}</dd>
+                        <dt class="col-sm-4">Accounting group</dt>
+                        <dd class="col-sm-8">{{ mapping.get_accounting_group_display|default:"Not assigned" }}</dd>
+                        <dt class="col-sm-4">USD balance</dt>
+                        <dd class="col-sm-8">{{ mapping.usd_balance|floatformat:2|default:"Not available" }}</dd>
+                        <dt class="col-sm-4">ZWG balance</dt>
+                        <dd class="col-sm-8">{{ mapping.zwg_balance|floatformat:2|default:"Not available" }}</dd>
+                        <dt class="col-sm-4">Created</dt>
+                        <dd class="col-sm-8">{{ mapping.created_at|date:"Y-m-d H:i:s T" }}</dd>
+                        <dt class="col-sm-4">Last updated</dt>
+                        <dd class="col-sm-8 mb-0">{{ mapping.last_updated_at|date:"Y-m-d H:i:s T" }}</dd>
+                    </dl>
+                </div>
+            </div>
+        </section>
+        <section class="col-lg-5" aria-labelledby="access-summary-heading">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h2 id="access-summary-heading" class="h5">Access summary</h2>
+                    <dl class="row">
+                        <dt class="col-8">Total events</dt>
+                        <dd class="col-4 text-end">{{ event_stats.total|intcomma }}</dd>
+                        <dt class="col-8">Granted</dt>
+                        <dd class="col-4 text-end">{{ event_stats.granted|intcomma }}</dd>
+                        <dt class="col-8">Rejected</dt>
+                        <dd class="col-4 text-end">{{ event_stats.rejected|intcomma }}</dd>
+                    </dl>
+                    {% if latest_event %}
+                    <p class="mb-1">Last decision:
+                        <span class="badge {% if latest_event.access_status == 'grant' %}bg-success{% else %}bg-danger{% endif %}">
+                            {{ latest_event.get_access_status_display }}
+                        </span>
+                    </p>
+                    <p class="text-muted mb-0">{{ latest_event.event_timestamp|date:"Y-m-d H:i:s T" }} ({{ latest_event.event_timestamp|naturaltime }})</p>
+                    {% else %}
+                    <p class="text-muted mb-0">No access events recorded for this mapping.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <section class="mb-4" aria-labelledby="connections-heading">
+        <h2 id="connections-heading" class="h5">Linked access IDs</h2>
+        <p class="text-muted">Connected means an access ID is linked, not that access is granted. Device active/inactive status is configured status, not a live connectivity check.</p>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead>
+                    <tr>
+                        <th scope="col">Access ID</th>
+                        <th scope="col">Authentication</th>
+                        <th scope="col">Device</th>
+                        <th scope="col">Location</th>
+                        <th scope="col">Device status</th>
+                        <th scope="col">Last successful sync</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for access_id in access_ids %}
+                    <tr>
+                        <td class="text-break">{{ access_id.access_id|default:"Not set" }}</td>
+                        <td>{{ access_id.get_auth_type_display|default:"Not specified" }}</td>
+                        {% with device=access_id.access_device %}
+                        {% if device %}
+                        <td>{{ device.alias|default:device.device_id }}<small class="d-block text-muted">{{ device.device_id }}</small></td>
+                        <td>{{ device.location|default:"Not specified" }}</td>
+                        <td>
+                            {% if device.is_active %}<span class="badge bg-success">Active</span>
+                            {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+                        </td>
+                        <td>{{ device.last_sync_at|date:"Y-m-d H:i:s T"|default:"No sync recorded" }}</td>
+                        {% else %}
+                        <td>Not assigned</td>
+                        <td>Not available</td>
+                        <td><span class="badge bg-secondary">Unknown</span></td>
+                        <td>No sync recorded</td>
+                        {% endif %}
+                        {% endwith %}
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-center text-muted">No access IDs linked to this mapping.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section aria-labelledby="events-heading">
+        <h2 id="events-heading" class="h5">Access events / logs</h2>
+        <p class="text-muted">Recorded events attributed to this mapping at the time of the attempt. Unattributed events are not included.</p>
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead>
+                    <tr>
+                        <th scope="col">Timestamp</th>
+                        <th scope="col">Access ID</th>
+                        <th scope="col">Decision</th>
+                        <th scope="col">Event type</th>
+                        <th scope="col">Device</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in page_obj %}
+                    <tr>
+                        <td class="text-nowrap">{{ event.event_timestamp|date:"Y-m-d H:i:s T" }}</td>
+                        <td class="text-break">{{ event.device_access_id }}</td>
+                        <td><span class="badge {% if event.access_status == 'grant' %}bg-success{% else %}bg-danger{% endif %}">{{ event.get_access_status_display }}</span></td>
+                        <td>{{ event.get_access_type_display }}</td>
+                        <td>
+                            {% with device=event.access_control_device %}
+                            {% if device %}
+                            {{ device.alias|default:device.device_id }}<small class="d-block text-muted">{{ device.device_id }}</small>
+                            {% else %}Unknown device{% endif %}
+                            {% endwith %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="text-center text-muted">No access events recorded for this mapping.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if page_obj.paginator.num_pages > 1 %}
+        <nav aria-label="Access event pages" class="d-flex flex-wrap align-items-center gap-3">
+            {% if page_obj.has_previous %}
+            <a class="btn btn-sm btn-outline-primary" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+            {% endif %}
+            <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} ({{ page_obj.paginator.count|intcomma }} events)</span>
+            {% if page_obj.has_next %}
+            <a class="btn btn-sm btn-outline-primary" href="?page={{ page_obj.next_page_number }}">Next</a>
+            {% endif %}
+        </nav>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

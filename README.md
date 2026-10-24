@@ -113,7 +113,23 @@ The external database intentionally does not store access-control mapping data. 
 UI:
 
 - `/` - mapping management page
+- `/mappings/<pk>/` - authenticated mapping detail page, opened by selecting a user's name
 - `/settings/` - authorization settings page
+
+### Mapping Details
+
+Select a user's name on the User Connections page to view their account identifiers,
+accounting system/group, balances, mapping timestamps, and all linked access IDs.
+Each linked ID shows its authentication type, assigned device, location, configured
+active/inactive status, and last recorded successful sync. These are stored values,
+not live connection checks; a linked ID does not guarantee access authorization.
+
+The access summary and newest-first event log show decisions attributed to that
+mapping, including access ID, event type, device, and timestamp. Logs are paginated
+at 25 events per page; summary counts cover the entire history. Events remain
+associated with the mapping recorded at the time of the attempt, even if an ID is
+subsequently disconnected or reassigned. Unattributed events are not matched by
+access ID, to avoid showing another account's history.
 
 API:
 

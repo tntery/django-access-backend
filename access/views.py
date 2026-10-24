@@ -10,11 +10,12 @@ from pathlib import Path
 
 from django.conf import settings
 from django.core.paginator import Paginator
+from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib import messages
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from .filters import AccountMappingFilter
@@ -23,6 +24,7 @@ from .forms import SettingForm
 
 EXTERNAL_ACCOUNTING_DB_NAME = 'external_accounting.sqlite3'
 ACCOUNT_MAPPING_PAGE_SIZE = 25
+MAPPING_EVENT_PAGE_SIZE = 25
 logger = logging.getLogger(__name__)
 
 env = environ.Env()
@@ -146,6 +148,33 @@ def account_mapping_list_view(request):
             "access_device_last_synced_at": access_device_last_synced_at if access_device_last_synced_at else "-",
             "last_access_event_timestamp": last_access_event_timestamp if last_access_event_timestamp else "-",
             "last_access_decision": last_access_decision,
+        },
+    )
+
+
+@login_required
+def account_mapping_detail_view(request, pk):
+    """Display a mapping's current connections and recorded access history."""
+    mapping = get_object_or_404(AccountMapping, pk=pk)
+    access_ids = mapping.access_ids.select_related('access_device').order_by('created_at', 'pk')
+    events = AccessEventLog.objects.filter(user=mapping).select_related('access_control_device').order_by('-event_timestamp', '-pk')
+    event_stats = events.aggregate(
+        total=Count('pk'),
+        granted=Count('pk', filter=Q(access_status='grant')),
+        rejected=Count('pk', filter=Q(access_status='reject')),
+    )
+    page_obj = Paginator(events, MAPPING_EVENT_PAGE_SIZE).get_page(request.GET.get('page'))
+
+    return render(
+        request,
+        'access/mapping_detail.html',
+        {
+            'mapping': mapping,
+            'access_ids': access_ids,
+            'connected': mapping.has_access_id,
+            'event_stats': event_stats,
+            'latest_event': events.first(),
+            'page_obj': page_obj,
         },
     )
 
